@@ -17,6 +17,7 @@
 #include "decode.h"
 #include "analyze.h"
 #include "emit.h"
+#include "hwregs.h"
 #include "lynxdec.h"
 
 static uint8_t *read_file(const char *path, size_t *out_size) {
@@ -54,7 +55,18 @@ static void dis_cb(const insn_t *in, void *user) {
     (void)user;
     char text[48];
     m65c02_format(in, text, sizeof(text));
-    printf("%04X  %02X %s\n", in->pc, in->opcode, text);
+    /* annotate hardware-register operands so e.g. `STA $FC91` shows as SPRGO */
+    const char *reg = NULL;
+    if (in->mode == AM_ABS || in->mode == AM_ABX || in->mode == AM_ABY ||
+        in->mode == AM_IND || in->mode == AM_IAX)
+        reg = lynx_reg_name((uint16_t)in->operand);
+    if (reg) {
+        const char *note = lynx_reg_note((uint16_t)in->operand);
+        if (note) printf("%04X  %02X %-18s ; %s (%s)\n", in->pc, in->opcode, text, reg, note);
+        else      printf("%04X  %02X %-18s ; %s\n", in->pc, in->opcode, text, reg);
+    } else {
+        printf("%04X  %02X %s\n", in->pc, in->opcode, text);
+    }
 }
 
 int main(int argc, char **argv) {

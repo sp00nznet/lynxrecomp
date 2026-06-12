@@ -5,6 +5,7 @@ add_executable(m65c02recomp
     lnx.c
     analyze.c
     emit.c
+    hwregs.c
     lynxdec.c
 )
 

@@ -42,6 +42,20 @@ void lynx_ext_jmp(uint16_t addr);
 void lynx_jmp_indirect(uint16_t addr);
 void lynx_unimpl(uint8_t opcode);
 
+/* --- function dispatch: run recompiled C through runtime-computed targets ---
+ * A static `JSR`/`JMP abs` is emitted as a direct C call, but computed jumps
+ * (`JMP ($nnnn)`, `JMP ($nnnn,X)`) and the IRQ/reset vectors only know their
+ * target at runtime. Each recompiled function registers its address here, and
+ * control transfers to a runtime address go through lynx_call_addr(). The
+ * generated lynx_recomp_register() (emitted with the functions) populates the
+ * table. lynx_jmp_indirect() dispatches through it. */
+typedef void (*lynx_fn_t)(void);
+
+void lynx_register(uint16_t addr, lynx_fn_t fn);  /* map addr -> recompiled fn   */
+void lynx_call_addr(uint16_t addr);               /* call the fn registered @addr */
+int  lynx_has_func(uint16_t addr);                /* is a fn registered @addr?   */
+void lynx_dispatch_reset(void);                   /* clear the table             */
+
 /* --- loads --- */
 static inline void lynx_lda(uint8_t v) { lynx_cpu.a = v; lynx_set_nz(v); }
 static inline void lynx_ldx(uint8_t v) { lynx_cpu.x = v; lynx_set_nz(v); }

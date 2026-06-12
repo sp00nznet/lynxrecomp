@@ -56,3 +56,22 @@ if(MSVC)
     target_compile_options(test_pipeline PRIVATE /wd4244)
 endif()
 add_test(NAME pipeline COMMAND test_pipeline)
+
+# --- dispatch: recompiled C runs through a computed jump ---
+set(GEN2 ${CMAKE_CURRENT_BINARY_DIR}/gen_jmp)
+file(MAKE_DIRECTORY ${GEN2})
+add_custom_command(
+    OUTPUT ${GEN2}/recomp_funcs.c ${GEN2}/recomp_funcs.h
+    COMMAND m65c02recomp recompbin ${CMAKE_CURRENT_SOURCE_DIR}/fixture_jmp.bin 0x0200 ${GEN2}
+            0x0200 0x0220 0x0228 0x0230
+    DEPENDS m65c02recomp ${CMAKE_CURRENT_SOURCE_DIR}/fixture_jmp.bin
+    COMMENT "Recompiling tests/fixture_jmp.bin -> C"
+    VERBATIM
+)
+add_executable(test_dispatch test_dispatch.c ${GEN2}/recomp_funcs.c)
+target_include_directories(test_dispatch PRIVATE ${GEN2} ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_dispatch PRIVATE lynxrecomp)
+if(MSVC)
+    target_compile_options(test_dispatch PRIVATE /wd4244)
+endif()
+add_test(NAME dispatch COMMAND test_dispatch)

@@ -238,6 +238,9 @@ int emit_functions(const char *outdir, const uint8_t *rom, size_t rom_size,
         rom_label ? rom_label : "(unknown)", t->nfuncs);
     for (int i = 0; i < t->nfuncs; i++)
         fprintf(h, "void lynx_func_%04X(void);\n", t->funcs[i].start);
+    fprintf(h, "\n/* Register every recompiled function in the dispatch table so\n"
+               " * computed jumps and the IRQ/reset vectors can reach them. */\n"
+               "void lynx_recomp_register(void);\n");
     fprintf(h, "\n#endif\n");
     fclose(h);
 
@@ -287,6 +290,13 @@ int emit_functions(const char *outdir, const uint8_t *rom, size_t rom_size,
         /* fall-through safety: a function that ran off its end returns. */
         fprintf(f, "}\n\n");
     }
+
+    /* dispatch registration */
+    fprintf(f, "void lynx_recomp_register(void) {\n");
+    for (int i = 0; i < t->nfuncs; i++)
+        fprintf(f, "    lynx_register(0x%04X, lynx_func_%04X);\n",
+                t->funcs[i].start, t->funcs[i].start);
+    fprintf(f, "}\n");
     fclose(f);
     return 0;
 }

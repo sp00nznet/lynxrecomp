@@ -88,11 +88,33 @@ cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
       first Lynx game on screen through this toolkit. Two real hardware bugs
       fixed in the process: Suzy/video DMA must bypass the MAPCTL overlay (write
       DRAM directly), and the timer link chain is `0→2→4→1→3→5→7` (so VBL fires).
-- [ ] Run the *recompiled* C (not the interpreter) against the peripherals:
-      needs computed-jump (`JMP ($1897,X)`) resolution + a main-loop/IRQ
-      execution model. `lynxrun` is the reference oracle.
-- [ ] Playable: input wired to a host window; audio.
+- [x] Playable bring-up: `lynxrun --play` (live window) / `--capture`; input
+      wired to Suzy's JOYSTICK (verified by deterministic divergence).
+- [ ] Audio (4 channels).
 - [ ] `scripts/sweep` over the whole Lynx library as a correctness corpus
       (recompile-all, like the vbrecomp approach) — each ROM that fails is a
       concrete decoder/analysis/codegen bug.
 - [ ] IDA/Ghidra cross-validation of the discovered function table.
+
+## Phase 6 — running the recompiled C (the static-recompilation goal)
+
+So far the emitted `lynx_func_*` C *compiles* but the game *runs* via the
+`lynxrun` interpreter (the oracle). This phase executes the recompiled C itself.
+
+- [x] **Dispatch table** (`recomp_rt.c`): a runtime `addr → lynx_fn_t` map with
+      `lynx_register`/`lynx_call_addr`. Static `JSR`/`JMP abs` stay direct C
+      calls; computed jumps (`JMP ($nnnn)`, `JMP ($nnnn,X)`) and the IRQ/reset
+      vectors dispatch through it. The emitter generates `lynx_recomp_register()`.
+      Proven: recompiled C runs through a synthetic jump table (`test_dispatch`),
+      and the game's `JMP ($1897,X)` IRQ dispatch now routes through the table.
+- [ ] **Fuller discovery** so most of the game is recompiled (not just the 16
+      functions reachable from the entry): resolve jump-table targets from a
+      post-init RAM image, seed the IRQ vector + table entries, and handle code
+      the game loads on demand.
+- [ ] **Execution model**: emit cooperative "ticks" at loop back-edges that step
+      time and deliver the IRQ by dispatching the handler; bound a run with
+      setjmp/longjmp so the host can present frames + poll input.
+- [ ] **Run + verify**: execute the recompiled game and diff its framebuffer
+      against `lynxrun` (the interpreter oracle), frame for frame. A hybrid
+      fallback (interpret addresses without a recompiled function) bridges the
+      gap while discovery coverage grows.

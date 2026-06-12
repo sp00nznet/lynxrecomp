@@ -1,6 +1,8 @@
 /* timer.c - Mikey timer + interrupt model. See timer.h. */
 #include "lynxrecomp/timer.h"
 #include "lynxrecomp/mikey.h"
+#include <string.h>
+#include <stddef.h>
 
 uint8_t lynx_irq_latch = 0;
 
@@ -43,6 +45,19 @@ static void tick(int i) {
     } else {
         (*cnt)--;
     }
+}
+
+/* ---- save-state: the timer internals not already in lynx_mikey.reg ---- */
+size_t lynx_timer_state_size(void) { return sizeof(phase) + 1; }
+size_t lynx_timer_state_save(uint8_t *b) {
+    memcpy(b, phase, sizeof(phase));            /* 8 * 4 = 32 */
+    b[sizeof(phase)] = lynx_irq_latch;
+    return sizeof(phase) + 1;
+}
+size_t lynx_timer_state_load(const uint8_t *b) {
+    memcpy(phase, b, sizeof(phase));
+    lynx_irq_latch = b[sizeof(phase)];
+    return sizeof(phase) + 1;
 }
 
 uint8_t lynx_timer_step(uint32_t us) {

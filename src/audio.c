@@ -2,6 +2,7 @@
 #include "lynxrecomp/audio.h"
 #include "lynxrecomp/mikey.h"
 #include <stdio.h>
+#include <string.h>
 
 #define AUD_BASE     0x20          /* channel 0 register base within Mikey */
 #define A_VOLUME     0
@@ -33,6 +34,12 @@ static void    asetreg(int c, int field, uint8_t v) { lynx_mikey.reg[AUD_BASE + 
 void lynx_audio_init(void) {
     for (int c = 0; c < 4; c++) { ch[c].lfsr = 0; ch[c].dac = 0; ch[c].phase = 0; }
 }
+
+/* save-state: the per-channel LFSR/DAC/phase (channel config lives in
+ * lynx_mikey.reg). */
+size_t lynx_audio_state_size(void) { return sizeof(ch); }
+size_t lynx_audio_state_save(uint8_t *b) { memcpy(b, ch, sizeof(ch)); return sizeof(ch); }
+size_t lynx_audio_state_load(const uint8_t *b) { memcpy(ch, b, sizeof(ch)); return sizeof(ch); }
 
 void lynx_audio_reseed(int c) {
     ch[c].lfsr = (uint16_t)(areg(c, A_SHIFTLO) | ((areg(c, A_OTHER) >> 4) << 8));

@@ -17,6 +17,7 @@
 #define LYNXRECOMP_TIMER_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* control A bits */
 #define TCTLA_INT       0x80   /* underflow raises an interrupt   */
@@ -41,5 +42,11 @@ void    lynx_irq_ack(uint8_t mask);      /* clear latch bits (INTRST write)  */
 void    lynx_irq_raise(uint8_t mask);    /* set latch bits   (INTSET write)  */
 
 void lynx_timer_init(void);
+
+/* save-state: serialize the timer internals (phase accumulators + irq latch)
+ * that aren't already in lynx_mikey.reg. Returns bytes written/read. */
+size_t lynx_timer_state_size(void);
+size_t lynx_timer_state_save(uint8_t *buf);
+size_t lynx_timer_state_load(const uint8_t *buf);
 
 #endif /* LYNXRECOMP_TIMER_H */

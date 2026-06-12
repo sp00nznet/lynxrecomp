@@ -37,6 +37,12 @@ target_include_directories(test_audio PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(test_audio PRIVATE lynxrecomp)
 add_test(NAME audio COMMAND test_audio)
 
+# --- save states ---
+add_executable(test_state test_state.c)
+target_include_directories(test_state PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_state PRIVATE lynxrecomp)
+add_test(NAME state COMMAND test_state)
+
 # --- end-to-end pipeline: recompile fixture.bin, build the C, run it ---
 set(GEN ${CMAKE_CURRENT_BINARY_DIR}/gen)
 file(MAKE_DIRECTORY ${GEN})

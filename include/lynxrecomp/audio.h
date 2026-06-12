@@ -18,6 +18,7 @@
 #define LYNXRECOMP_AUDIO_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 void lynx_audio_init(void);
 
@@ -33,5 +34,10 @@ void lynx_audio_reseed(int c);
 
 /* Write a mono 16-bit PCM buffer as a RIFF/WAV file. Returns 0 on success. */
 int lynx_audio_write_wav(const char *path, const int16_t *pcm, int nsamples, int rate);
+
+/* save-state: serialize the channel LFSR/DAC/phase state. */
+size_t lynx_audio_state_size(void);
+size_t lynx_audio_state_save(uint8_t *buf);
+size_t lynx_audio_state_load(const uint8_t *buf);
 
 #endif /* LYNXRECOMP_AUDIO_H */

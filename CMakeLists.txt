@@ -26,6 +26,7 @@ add_library(lynxrecomp STATIC
     src/recomp_exec.c
     src/video.c
     src/audio.c
+    src/state.c
 )
 target_include_directories(lynxrecomp PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include

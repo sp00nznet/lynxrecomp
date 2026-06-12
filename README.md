@@ -10,10 +10,15 @@ exactly the shape that recompiles cleanly: translate the one CPU to native C,
 and emulate the support chips as peripherals. No second processor to chase, no
 JIT, no interpreter in the hot path.
 
-`lynxrecomp` is the reusable toolkit. The first game brought up on it lives in a
-separate repo, [`chipschallenge-lynx-recomp`](https://github.com/sp00nznet/chipschallenge-lynx-recomp),
-which consumes this one as a submodule — that split is deliberate: the toolkit
-is the thing other people fork to recompile *their* Lynx game.
+`lynxrecomp` is the reusable toolkit. The games brought up on it live in
+separate repos that consume this one as a submodule — that split is deliberate:
+the toolkit is the thing other people fork to recompile *their* Lynx game.
+
+- [`chipschallenge-lynx-recomp`](https://github.com/sp00nznet/chipschallenge-lynx-recomp)
+  — *Chip's Challenge* (the first; renders the title + plays the music).
+- [`crystalmines2-lynx-recomp`](https://github.com/sp00nznet/crystalmines2-lynx-recomp)
+  — *Crystal Mines II* (the second; a generalization test — a different game ran
+  with zero toolkit changes).
 
 > **No game data here.** ROMs (`.lnx`) are `.gitignore`d. This repo is the
 > recompiler, the runtime, and docs — bring your own cartridge dump.

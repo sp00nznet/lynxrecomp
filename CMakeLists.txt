@@ -35,6 +35,17 @@ target_include_directories(lynxrecomp PUBLIC
 # --- recompiler CLI --------------------------------------------------------
 add_subdirectory(tools/m65c02recomp)
 
+# --- interactive frontend (opt-in: SDL2 + Dear ImGui) ----------------------
+# OFF by default so the core toolkit + recompiler build with no external deps.
+# Enable with -DLYNXRECOMP_FRONTEND=ON (and a vcpkg toolchain for SDL2).
+option(LYNXRECOMP_FRONTEND "Build the SDL2 + ImGui interactive frontend" OFF)
+if(LYNXRECOMP_FRONTEND)
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    add_subdirectory(frontend)
+endif()
+
 # --- tests (only when lynxrecomp is the top-level project, not a submodule) --
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     enable_testing()

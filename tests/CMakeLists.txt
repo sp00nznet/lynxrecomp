@@ -31,6 +31,12 @@ target_include_directories(test_math PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(test_math PRIVATE lynxrecomp)
 add_test(NAME math COMMAND test_math)
 
+# --- Mikey audio ---
+add_executable(test_audio test_audio.c)
+target_include_directories(test_audio PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_audio PRIVATE lynxrecomp)
+add_test(NAME audio COMMAND test_audio)
+
 # --- end-to-end pipeline: recompile fixture.bin, build the C, run it ---
 set(GEN ${CMAKE_CURRENT_BINARY_DIR}/gen)
 file(MAKE_DIRECTORY ${GEN})

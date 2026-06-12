@@ -25,6 +25,7 @@
 #include "lynxrecomp/mikey.h"
 #include "lynxrecomp/timer.h"
 #include "lynxrecomp/input.h"
+#include "lynxrecomp/audio.h"
 
 static uint8_t  bootrom[512];
 static const uint8_t *cart;
@@ -230,7 +231,39 @@ static int run_snapshot(const char *outbin, int nframes) {
     return 0;
 }
 
+/* ---- audio: run the game and capture the mix to a WAV ---- */
+#define AUDIO_RATE 44100
+static int run_audio(const char *outwav, double seconds) {
+    long total = (long)(seconds * 1000000.0);     /* 1 us per instruction */
+    int  cap   = (int)(seconds * AUDIO_RATE) + 16;
+    int16_t *pcm = (int16_t *)malloc((size_t)cap * sizeof(int16_t));
+    if (!pcm) return 1;
+    long ns = 0, sacc = 0;
+    for (long i = 0; i < total && ns < cap; i++) {
+        if (interp_step() < 0) break;
+        lynx_timer_step(1);
+        lynx_audio_step(1);
+        if (lynx_irq_pending() && !icpu.i) { interp_irq(); g_irqs++; }
+        sacc += AUDIO_RATE;                        /* emit a sample every 1e6/RATE us */
+        if (sacc >= 1000000) { sacc -= 1000000; pcm[ns++] = lynx_audio_sample(); }
+    }
+    /* simple loudness stat */
+    long peak = 0, nz = 0;
+    for (int i = 0; i < ns; i++) { int a = pcm[i] < 0 ? -pcm[i] : pcm[i]; if (a > peak) peak = a; if (pcm[i]) nz++; }
+    printf("captured %ld samples (%.1fs @ %dHz), peak %ld, %ld nonzero, %ld IRQs\n",
+           ns, (double)ns / AUDIO_RATE, AUDIO_RATE, peak, nz, g_irqs);
+    int rc = lynx_audio_write_wav(outwav, pcm, (int)ns, AUDIO_RATE);
+    if (rc == 0) printf("wrote audio -> %s\n", outwav);
+    free(pcm);
+    return rc;
+}
+
 int main(int argc, char **argv) {
+    if (argc >= 5 && !strcmp(argv[1], "--audio")) {
+        if (setup(argv[2], argv[3]) != 0) return 1;
+        double secs = (argc > 5) ? atof(argv[5]) : 4.0;
+        return run_audio(argv[4], secs);
+    }
     if (argc >= 5 && !strcmp(argv[1], "--snapshot")) {
         if (setup(argv[2], argv[3]) != 0) return 1;
         int nframes = (argc > 5) ? atoi(argv[5]) : 60;
@@ -256,7 +289,8 @@ int main(int argc, char **argv) {
             "  %s <cart.lnx> <boot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]\n"
             "  %s --capture <cart.lnx> <boot.img> <outdir> [nframes] [stride] [btnHex] [atFrame] [holdFrames]\n"
             "  %s --snapshot <cart.lnx> <boot.img> <out.bin> [nframes]\n"
-            "  %s --play <cart.lnx> <boot.img>\n", argv[0], argv[0], argv[0], argv[0]);
+            "  %s --audio <cart.lnx> <boot.img> <out.wav> [seconds]\n"
+            "  %s --play <cart.lnx> <boot.img>\n", argv[0], argv[0], argv[0], argv[0], argv[0]);
         return 2;
     }
     if (setup(argv[1], argv[2]) != 0) return 1;

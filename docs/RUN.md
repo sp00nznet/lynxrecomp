@@ -8,8 +8,14 @@ actually puts a game on screen — and the reference oracle for running the
 ```
 lynxrun <cart.lnx> <boot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]
 lynxrun --capture <cart.lnx> <boot.img> <outdir> [nframes] [stride] [btnHex] [atFrame] [holdFrames]
+lynxrun --audio   <cart.lnx> <boot.img> <out.wav> [seconds]   (capture the music)
 lynxrun --play    <cart.lnx> <boot.img>          (Windows: live window)
 ```
+
+**`--audio`** runs the game and renders the 4-channel Mikey mix to a 44.1 kHz WAV
+(`audio.c`). On Chip's Challenge the attract music comes in after the ~10 s
+boot, with real tonal structure. The engine also runs in the recompiled path
+(driven by the cooperative tick).
 
 ## Frames, input, and interactivity
 

@@ -76,9 +76,13 @@ cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
       transparency still to do.)
 - [x] **Suzy math unit** (`suzy.c`): 16×16→32 multiply and 32/16 divide
       (unsigned; signed mode is a refinement).
-- [x] All four covered by `ctest` with synthetic inputs (no game data).
-- [ ] Audio (4 channels).
-- [ ] Blitter scaling/stretch/tilt + collision; signed math.
+- [x] **Mikey audio** (`audio.c`): 4 channels, each a timer-clocked 12-bit LFSR
+      (feedback taps 7,0,1,2,3,4,5,10,11, inverted XOR) with signed volume +
+      integrate mode, mixed to PCM. Unit-tested, and the Chip's Challenge attract
+      music captures to a WAV with real tonal structure (`lynxrun --audio`).
+- [x] All five covered by `ctest` with synthetic inputs (no game data).
+- [ ] Blitter scaling/stretch/tilt + collision; signed math; stereo/attenuation
+      (Howard); live audio playback in `--play`.
 
 ## Phase 5 — bring-up & corpus
 
@@ -90,7 +94,8 @@ cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
       DRAM directly), and the timer link chain is `0→2→4→1→3→5→7` (so VBL fires).
 - [x] Playable bring-up: `lynxrun --play` (live window) / `--capture`; input
       wired to Suzy's JOYSTICK (verified by deterministic divergence).
-- [ ] Audio (4 channels).
+- [x] Audio: `lynxrun --audio` captures the attract music to a WAV; the engine
+      also runs in the recompiled path (driven by the tick).
 - [ ] `scripts/sweep` over the whole Lynx library as a correctness corpus
       (recompile-all, like the vbrecomp approach) — each ROM that fails is a
       concrete decoder/analysis/codegen bug.

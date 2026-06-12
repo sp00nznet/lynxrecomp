@@ -7,6 +7,7 @@
  * which the emitter plants at loop back-edges. */
 #include "lynxrecomp/recomp_rt.h"
 #include "lynxrecomp/timer.h"
+#include "lynxrecomp/audio.h"
 
 void (*lynx_frame_hook)(void) = 0;
 
@@ -32,9 +33,10 @@ void lynx_rti(void) {
     (void)lynx_pull();                              /* PCH (discarded) */
 }
 
-/* Loop back-edge: advance emulated time and service a pending interrupt. */
+/* Loop back-edge: advance emulated time, drive audio, and service interrupts. */
 void lynx_tick(void) {
     lynx_timer_step(LYNX_TICK_US);
+    lynx_audio_step(LYNX_TICK_US);
     if (lynx_irq_pending() && !lynx_cpu.i)
         lynx_irq_deliver();
 }

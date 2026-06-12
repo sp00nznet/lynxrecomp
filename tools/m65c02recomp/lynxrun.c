@@ -1,16 +1,19 @@
 /* lynxrun - execution driver: run a Lynx game against the real runtime.
  *
- * This is the bring-up driver. It boots the cart with the shared interpreter
- * (interp.c) over the real boot ROM + cart-read model, but routes Suzy/Mikey to
- * the tested runtime peripherals (so the blitter, timers and video actually
- * run). It steps time, delivers the Mikey timer interrupt into the game's RAM
- * handler, runs a budget of instructions, and writes the framebuffer to a PPM.
+ * Boots the cart with the shared interpreter (interp.c) over the real boot ROM
+ * + cart-read model, but routes Suzy/Mikey to the tested runtime peripherals so
+ * the blitter, timers and video actually run. Steps time, delivers the Mikey
+ * timer interrupt into the game's RAM handler, and presents the framebuffer.
  *
- *   lynxrun <cart.lnx> <lynxboot.img> <out.ppm> [maxInsns] [traceN]
+ * Modes:
+ *   lynxrun <cart.lnx> <boot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]
+ *       headless: run a budget, write one frame.
+ *   lynxrun --capture <cart.lnx> <boot.img> <outdir> [nframes] [stride] [btnHex] [atFrame] [holdFrames]
+ *       run continuously, dump a PPM per display flip (optionally injecting a
+ *       scripted joystick press) - proves the game runs frame-by-frame + input.
+ *   lynxrun --play <cart.lnx> <boot.img>           (Windows: live window)
  *
- * The eventual goal is to run the *recompiled* C against these same peripherals;
- * this interpreter-driver gets a frame on screen now and is the reference oracle
- * for that work.
+ * See docs/RUN.md.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +34,8 @@ static uint8_t  mapctl = 0;
 static unsigned cart_block = 0, cart_pos = 0;
 static uint8_t  iodat = 0;
 static int      strobe_prev = 0;
+static int      g_flip = 0;       /* set when DISPADR ($FD94/95) is written */
+static long     g_irqs = 0;
 
 static uint8_t cart_read(void) {
     size_t a = (size_t)cart_block * pagesize + cart_pos;
@@ -46,7 +51,7 @@ uint8_t bus_read(uint16_t addr) {
         int as_ram = vectors ? (mapctl & 0x08) : (mapctl & 0x04);
         if (!as_ram && addr != 0xFFF8) return bootrom[addr - 0xFE00];
     }
-    return lynx_mem_read(addr);          /* runtime: $FC/$FD -> suzy/mikey, else RAM */
+    return lynx_mem_read(addr);
 }
 
 void bus_write(uint16_t addr, uint8_t v) {
@@ -60,7 +65,8 @@ void bus_write(uint16_t addr, uint8_t v) {
             }
             strobe_prev = strobe;
         }
-        lynx_mem_write(addr, v);         /* runtime peripheral (blitter, timers, ...) */
+        else if (addr == 0xFD94 || addr == 0xFD95) g_flip = 1;  /* display swap */
+        lynx_mem_write(addr, v);
         return;
     }
     if (addr == 0xFFF9) { mapctl = v; lynx_mem_write(addr, v); return; }
@@ -76,66 +82,161 @@ static uint8_t *read_file(const char *p, size_t *n) {
     fclose(f); *n=(size_t)s0; return b;
 }
 
-int main(int argc, char **argv) {
-    if (argc < 4) {
-        fprintf(stderr, "usage: %s <cart.lnx> <lynxboot.img> <out.ppm> [maxInsns] [traceN]\n", argv[0]);
-        return 2;
-    }
+/* Boot the machine; leaves PC at the boot ROM reset vector. Returns 0 ok. */
+static int setup(const char *cartpath, const char *bootpath) {
     size_t csz=0, bsz=0;
-    uint8_t *cdata = read_file(argv[1], &csz);
-    uint8_t *bdata = read_file(argv[2], &bsz);
-    if (!cdata || !bdata || bsz < 512) { fprintf(stderr, "load error\n"); return 1; }
-
-    lnx_info_t info; lnx_parse(cdata, csz, &info);
+    uint8_t *cdata = read_file(cartpath, &csz);
+    uint8_t *bdata = read_file(bootpath, &bsz);
+    if (!cdata || !bdata || bsz < 512) { fprintf(stderr, "load error\n"); return -1; }
+    static lnx_info_t info; lnx_parse(cdata, csz, &info);
     cart = info.rom; cart_size = info.rom_size;
     if (info.valid && info.page_size_bank0) pagesize = info.page_size_bank0;
     memcpy(bootrom, bdata, 512);
 
-    long maxi = (argc > 4) ? strtol(argv[4], NULL, 0) : 40000000L;
-    long tracen = (argc > 5) ? strtol(argv[5], NULL, 0) : 0;
-    long trace_start = (argc > 6) ? strtol(argv[6], NULL, 0) : 0;
-
-    lynx_mem_init();
-    lynx_suzy_init();
-    lynx_mikey_init();
-    lynx_timer_init();
+    lynx_mem_init(); lynx_suzy_init(); lynx_mikey_init(); lynx_timer_init();
     lynx_input_set(0x00, 0x00);
-    mapctl = 0; cart_block = cart_pos = 0; strobe_prev = 0;
-
+    mapctl = 0; cart_block = cart_pos = 0; strobe_prev = 0; g_flip = 0; g_irqs = 0;
     interp_reset_pc((uint16_t)(bus_read(0xFFFC) | (bus_read(0xFFFD) << 8)));
-    printf("reset -> $%04X, pagesize %u\n", icpu.pc, pagesize);
+    return 0;
+}
 
-    long irqs = 0, blits = 0, entry_at = -1;
-    uint16_t game_entry = 0;
+/* Run until the next display flip (or the budget). Returns instructions run. */
+static long run_until_flip(long budget) {
     long i = 0;
+    g_flip = 0;
+    for (; i < budget; i++) {
+        if (interp_step() < 0) break;
+        lynx_timer_step(1);                       /* ~1us / instruction */
+        if (lynx_irq_pending() && !icpu.i) { interp_irq(); g_irqs++; }
+        if (g_flip) { i++; break; }
+    }
+    return i;
+}
+
+/* ---- headless: run a budget, write one frame ---- */
+static int run_headless(int argc, char **argv) {
+    long maxi = (argc > 4) ? strtol(argv[4], NULL, 0) : 40000000L;
+    interp_trace = (argc > 5) ? strtol(argv[5], NULL, 0) : 0;
+    long trace_at = (argc > 6) ? strtol(argv[6], NULL, 0) : 0;
+    printf("reset -> $%04X, pagesize %u\n", icpu.pc, pagesize);
+    long i = 0; uint16_t entry = 0; long entry_at = -1;
     for (; i < maxi; i++) {
         if (interp_step() < 0) break;
-        if (interp_event == EV_INDJMP && entry_at < 0) {
-            entry_at = i; game_entry = interp_event_addr;   /* loader -> game */
-        }
-        /* ~1us of emulated time per instruction (approx); drive the timers. */
+        if (interp_event == EV_INDJMP && entry_at < 0) { entry_at = i; entry = interp_event_addr; }
         lynx_timer_step(1);
         if (lynx_irq_pending() && !icpu.i) {
-            interp_irq(); irqs++;
-            if (irqs == trace_start && tracen > 0) interp_trace = tracen;  /* trace this IRQ */
+            interp_irq(); g_irqs++;
+            if (g_irqs == trace_at && interp_trace == 0 && argc > 5) interp_trace = strtol(argv[5], NULL, 0);
         }
-        if (lynx_suzy.busy) { /* a blit just ran (busy is cleared inside) */ }
     }
-    /* blits are completed synchronously; count via a cheap proxy: re-derive
-     * nothing here - just report what we can observe. */
-    (void)blits;
-
-    printf("ran %ld insns, game entry $%04X at insn %ld, %ld IRQs delivered, pc=$%04X\n",
-           i, game_entry, entry_at, irqs, icpu.pc);
-    printf("DISPADR=$%04X  MAPCTL=$%02X  irq_latch=$%02X  I=%d\n",
-           (unsigned)(lynx_mikey.reg[MIKEY_DISPADRL] | (lynx_mikey.reg[MIKEY_DISPADRH] << 8)),
-           mapctl, lynx_irq_latch, icpu.i);
-    for (int t = 0; t < 8; t++)
-        printf("  timer%d: backup=%02X ctlA=%02X count=%02X ctlB=%02X\n", t,
-               lynx_mikey.reg[t*4+0], lynx_mikey.reg[t*4+1],
-               lynx_mikey.reg[t*4+2], lynx_mikey.reg[t*4+3]);
-
+    printf("ran %ld insns, game entry $%04X at insn %ld, %ld IRQs, pc=$%04X\n",
+           i, entry, entry_at, g_irqs, icpu.pc);
     if (lynx_video_write_ppm(argv[3]) == 0) printf("wrote frame -> %s\n", argv[3]);
-    free(cdata); free(bdata);
     return 0;
+}
+
+/* ---- capture: dump a PPM sequence, with a scripted joystick press ---- */
+static int run_capture(const char *outdir, int nframes, int stride,
+                       uint8_t btn, int at_frame, int hold) {
+    char path[1024];
+    printf("capture: %d frames (stride %d) -> %s/  press $%02X @frame %d for %d\n",
+           nframes, stride, outdir, btn, at_frame, hold);
+    int dumped = 0;
+    for (int f = 0; f < nframes; f++) {
+        uint8_t joy = (btn && f >= at_frame && f < at_frame + hold) ? btn : 0x00;
+        lynx_input_set(joy, 0x00);
+        run_until_flip(2000000);                 /* one displayed frame */
+        if ((f % stride) == 0) {
+            snprintf(path, sizeof(path), "%s/frame_%03d.ppm", outdir, dumped);
+            lynx_video_write_ppm(path);
+            dumped++;
+        }
+    }
+    printf("dumped %d frames, %ld IRQs total\n", dumped, g_irqs);
+    return 0;
+}
+
+#ifdef _WIN32
+#include <windows.h>
+static volatile int g_quit = 0;
+static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_CLOSE || m == WM_DESTROY) { g_quit = 1; PostQuitMessage(0); return 0; }
+    return DefWindowProc(h, m, w, l);
+}
+static int run_play(void) {
+    const int S = 4, W = LYNX_SCREEN_W, H = LYNX_SCREEN_H;
+    WNDCLASS wc; memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = wndproc; wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = "lynxrun"; wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    RegisterClass(&wc);
+    RECT r = { 0, 0, W * S, H * S };
+    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+    HWND hwnd = CreateWindow("lynxrun", "lynxrun - Lynx",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+        r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, NULL);
+    if (!hwnd) return 1;
+
+    BITMAPINFO bmi; memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = W; bmi.bmiHeader.biHeight = -H;   /* top-down */
+    bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    static uint32_t fb[LYNX_SCREEN_W * LYNX_SCREEN_H];
+
+    printf("play: arrows = D-pad, Z = A, X = B, A/S = Option1/2, Enter = Pause\n");
+    while (!g_quit) {
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg); DispatchMessage(&msg);
+        }
+        uint8_t joy = 0, sw = 0;
+        if (GetAsyncKeyState(VK_UP)    & 0x8000) joy |= LYNX_BTN_UP;
+        if (GetAsyncKeyState(VK_DOWN)  & 0x8000) joy |= LYNX_BTN_DOWN;
+        if (GetAsyncKeyState(VK_LEFT)  & 0x8000) joy |= LYNX_BTN_LEFT;
+        if (GetAsyncKeyState(VK_RIGHT) & 0x8000) joy |= LYNX_BTN_RIGHT;
+        if (GetAsyncKeyState('Z')      & 0x8000) joy |= LYNX_BTN_A;
+        if (GetAsyncKeyState('X')      & 0x8000) joy |= LYNX_BTN_B;
+        if (GetAsyncKeyState('A')      & 0x8000) joy |= LYNX_BTN_OPTION1;
+        if (GetAsyncKeyState('S')      & 0x8000) joy |= LYNX_BTN_OPTION2;
+        if (GetAsyncKeyState(VK_RETURN)& 0x8000) sw  |= LYNX_SW_PAUSE;
+        lynx_input_set(joy, sw);
+
+        run_until_flip(2000000);
+        lynx_video_render(fb);
+        HDC dc = GetDC(hwnd);
+        StretchDIBits(dc, 0, 0, W * S, H * S, 0, 0, W, H, fb, &bmi, DIB_RGB_COLORS, SRCCOPY);
+        ReleaseDC(hwnd, dc);
+        Sleep(15);
+    }
+    return 0;
+}
+#else
+static int run_play(void) { fprintf(stderr, "--play needs Windows; use --capture or headless.\n"); return 1; }
+#endif
+
+int main(int argc, char **argv) {
+    if (argc >= 4 && !strcmp(argv[1], "--capture")) {
+        if (setup(argv[2], argv[3]) != 0) return 1;
+        const char *outdir = (argc > 4) ? argv[4] : ".";
+        int nframes = (argc > 5) ? atoi(argv[5]) : 120;
+        int stride  = (argc > 6) ? atoi(argv[6]) : 8;
+        uint8_t btn = (argc > 7) ? (uint8_t)strtoul(argv[7], NULL, 0) : 0;
+        int atf     = (argc > 8) ? atoi(argv[8]) : 0;
+        int hold    = (argc > 9) ? atoi(argv[9]) : 0;
+        return run_capture(outdir, nframes, stride, btn, atf, hold);
+    }
+    if (argc >= 4 && !strcmp(argv[1], "--play")) {
+        if (setup(argv[2], argv[3]) != 0) return 1;
+        return run_play();
+    }
+    if (argc < 4) {
+        fprintf(stderr,
+            "usage:\n"
+            "  %s <cart.lnx> <boot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]\n"
+            "  %s --capture <cart.lnx> <boot.img> <outdir> [nframes] [stride] [btnHex] [atFrame] [holdFrames]\n"
+            "  %s --play <cart.lnx> <boot.img>\n", argv[0], argv[0], argv[0]);
+        return 2;
+    }
+    if (setup(argv[1], argv[2]) != 0) return 1;
+    return run_headless(argc, argv);
 }

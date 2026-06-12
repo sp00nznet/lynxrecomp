@@ -6,8 +6,27 @@ actually puts a game on screen — and the reference oracle for running the
 *recompiled* C later.
 
 ```
-lynxrun <cart.lnx> <lynxboot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]
+lynxrun <cart.lnx> <boot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]
+lynxrun --capture <cart.lnx> <boot.img> <outdir> [nframes] [stride] [btnHex] [atFrame] [holdFrames]
+lynxrun --play    <cart.lnx> <boot.img>          (Windows: live window)
 ```
+
+## Frames, input, and interactivity
+
+A display flip (a write to DISPADR, `$FD94/95`) marks a frame boundary; the
+driver runs the interpreter until the next flip, then presents.
+
+- **`--capture`** dumps a PPM per flip (every `stride` frames, up to `nframes`),
+  optionally injecting a scripted joystick press (`btnHex` held from frame
+  `atFrame` for `holdFrames`). On Chip's Challenge this captures the attract
+  sequence animating — the Epyx circuit-board intro, then the title screen with
+  scrolling credits. Because the interpreter is deterministic, a no-input run
+  and a button-held run can only diverge if the game *read* the joystick — which
+  they do, confirming input reaches the game end to end.
+- **`--play`** (Windows) opens a GDI window and runs in real time: arrow keys =
+  D-pad, `Z` = A, `X` = B, `A`/`S` = Option 1/2, `Enter` = Pause. Input maps to
+  Suzy's `JOYSTICK` register each frame. Dependency-free (user32/gdi32); on
+  non-Windows it falls back to headless.
 
 ## How it fits together
 

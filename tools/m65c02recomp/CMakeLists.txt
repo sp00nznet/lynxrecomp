@@ -26,6 +26,9 @@ add_executable(lynxrun
     lnx.c
 )
 target_link_libraries(lynxrun PRIVATE lynxrecomp)
+if(WIN32)
+    target_link_libraries(lynxrun PRIVATE user32 gdi32)   # --play live window
+endif()
 
 foreach(t m65c02recomp lynxexec lynxrun)
     set_target_properties(${t} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)

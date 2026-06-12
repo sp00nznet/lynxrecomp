@@ -9,8 +9,8 @@
  *   - 4 audio channels;
  *   - a 16-entry palette (GREEN at $FDA0, BLUERED at $FDB0).
  *
- * Phase 1 declares the map + state; timer/IRQ stepping and video readout are
- * implemented later. Register offsets are from $FD00.
+ * Timer/IRQ stepping lives in timer.c; video readout is below. Register
+ * offsets are from $FD00.
  */
 #ifndef LYNXRECOMP_MIKEY_H
 #define LYNXRECOMP_MIKEY_H
@@ -33,9 +33,16 @@ enum {
     MIKEY_PALBLURD = 0xB0  /* 16 bytes: blue/red nibbles per palette index   */
 };
 
-/* Display geometry. */
+/* DISPCTL ($FD92) bits */
+#define DISPCTL_DMA_ENABLE 0x01
+#define DISPCTL_FLIP       0x02
+#define DISPCTL_FOURBIT    0x04
+#define DISPCTL_COLOR      0x08
+
+/* Display geometry: 160x102, 4 bits/pixel, 2 pixels/byte (left = high nibble). */
 #define LYNX_SCREEN_W  160
 #define LYNX_SCREEN_H  102
+#define LYNX_SCREEN_PITCH (LYNX_SCREEN_W / 2)   /* 80 bytes per scanline */
 
 typedef struct {
     uint8_t reg[0x100];
@@ -46,5 +53,17 @@ extern lynx_mikey_t lynx_mikey;
 uint8_t lynx_mikey_read(uint8_t off);
 void    lynx_mikey_write(uint8_t off, uint8_t val);
 void    lynx_mikey_init(void);
+
+/* --- video readout (video.c) ---
+ * Decode the framebuffer at DISPADR through the 16-entry palette into
+ * 160*102 RGBA8888 pixels (0xAARRGGBB host order). `out` holds >= 160*102. */
+void lynx_video_render(uint32_t *out);
+
+/* Convert a 4-bit Lynx palette index to a 0xAARRGGBB colour. */
+uint32_t lynx_palette_color(int index);
+
+/* Write the current frame as a binary PPM (P6) - dependency-free; handy for
+ * tests and headless dumps. Returns 0 on success. */
+int lynx_video_write_ppm(const char *path);
 
 #endif /* LYNXRECOMP_MIKEY_H */

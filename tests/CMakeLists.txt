@@ -13,6 +13,12 @@ target_include_directories(test_units PRIVATE
 target_link_libraries(test_units PRIVATE lynxrecomp)
 add_test(NAME units COMMAND test_units)
 
+# --- hardware: timers/IRQ + video readout ---
+add_executable(test_hw test_hw.c)
+target_include_directories(test_hw PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_hw PRIVATE lynxrecomp)
+add_test(NAME hw COMMAND test_hw)
+
 # --- end-to-end pipeline: recompile fixture.bin, build the C, run it ---
 set(GEN ${CMAKE_CURRENT_BINARY_DIR}/gen)
 file(MAKE_DIRECTORY ${GEN})

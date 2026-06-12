@@ -107,10 +107,14 @@ So far the emitted `lynx_func_*` C *compiles* but the game *runs* via the
       vectors dispatch through it. The emitter generates `lynx_recomp_register()`.
       Proven: recompiled C runs through a synthetic jump table (`test_dispatch`),
       and the game's `JMP ($1897,X)` IRQ dispatch now routes through the table.
-- [ ] **Fuller discovery** so most of the game is recompiled (not just the 16
-      functions reachable from the entry): resolve jump-table targets from a
-      post-init RAM image, seed the IRQ vector + table entries, and handle code
-      the game loads on demand.
+- [x] **Fuller discovery** — `lynxrun --snapshot` dumps RAM after N frames (the
+      `$1897` jump table now populated: VBL→`$7A15`, sound→`$7C16`); discovery
+      auto-follows `JMP (abs)`/`JMP (abs,X)` by reading pointers from the image,
+      and `recompbin` auto-seeds the NMI/IRQ vectors. Result on Chip's Challenge:
+      **311 functions / ~61.8 KB of code** recompiled (was 16), and it all
+      compiles + links. The emitter is now boundary-aware (a `goto` only targets
+      a real decoded instruction boundary), so imperfect discovery / data-as-code
+      can't produce invalid C.
 - [ ] **Execution model**: emit cooperative "ticks" at loop back-edges that step
       time and deliver the IRQ by dispatching the handler; bound a run with
       setjmp/longjmp so the host can present frames + poll input.

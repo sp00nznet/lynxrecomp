@@ -40,6 +40,13 @@ static int in_image(const disc_t *d, uint16_t a) {
     return a >= d->base && (size_t)(a - d->base) < d->rom_size;
 }
 
+/* Read a 16-bit LE word from the image at CPU address `a` (0 if out of range). */
+static uint16_t img_rd16(const disc_t *d, uint16_t a) {
+    if (!in_image(d, a) || !in_image(d, (uint16_t)(a + 1))) return 0;
+    size_t off = (size_t)(a - d->base);
+    return (uint16_t)(d->rom[off] | (d->rom[off + 1] << 8));
+}
+
 static void push_func(disc_t *d, func_table_t *t, uint16_t a) {
     if (!in_image(d, a) || d->seen[a]) return;
     if (d->nwork >= MAX_FUNCS || t->nfuncs >= MAX_FUNCS) return;
@@ -111,6 +118,21 @@ static void discover_one(disc_t *d, func_table_t *t, uint16_t fs) {
                     }
                 } else if (in.target != 0) {
                     add_ext(t, in.target);            /* tail jump out of image */
+                }
+                /* Computed jumps: follow the pointer(s) read from the image
+                 * (a post-init snapshot has the tables populated). A single
+                 * indirect reads one pointer; an indexed indirect is a jump
+                 * table - read consecutive entries while they look like valid
+                 * in-image code targets. Each becomes a function. */
+                if (in.mode == AM_IND) {
+                    uint16_t tgt = img_rd16(d, in.operand);
+                    if (in_image(d, tgt)) push_func(d, t, tgt);
+                } else if (in.mode == AM_IAX) {
+                    for (int e = 0; e < 64; e++) {
+                        uint16_t tgt = img_rd16(d, (uint16_t)(in.operand + e * 2));
+                        if (tgt == 0 || !in_image(d, tgt)) break;
+                        push_func(d, t, tgt);
+                    }
                 }
                 terminator = 1;
                 break;

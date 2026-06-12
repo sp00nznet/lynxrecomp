@@ -157,10 +157,18 @@ int main(int argc, char **argv) {
         else {
             uint16_t base = (uint16_t)strtoul(argv[3], NULL, 0);
             static func_table_t tab;
-            uint16_t seeds[16]; size_t ns = 0;
-            for (int i = 5; i < argc && ns < 16; i++)
+            uint16_t seeds[32]; size_t ns = 0;
+            for (int i = 5; i < argc && ns < 24; i++)
                 seeds[ns++] = (uint16_t)strtoul(argv[i], NULL, 0);
             if (ns == 0) seeds[ns++] = base;     /* default: entry at base */
+            /* Auto-seed the NMI/IRQ vectors from the image (a post-init image
+             * has the game's RAM handlers installed). */
+            if (base == 0 && info.rom_size >= 0x10000) {
+                uint16_t nmi = (uint16_t)(info.rom[0xFFFA] | (info.rom[0xFFFB] << 8));
+                uint16_t irq = (uint16_t)(info.rom[0xFFFE] | (info.rom[0xFFFF] << 8));
+                if (nmi && ns < 32) seeds[ns++] = nmi;
+                if (irq && ns < 32) seeds[ns++] = irq;
+            }
             int nf = analyze_discover(info.rom, info.rom_size, base, seeds, ns, &tab);
             if (emit_functions(argv[4], info.rom, info.rom_size, base, &tab, path) != 0) {
                 fprintf(stderr, "error: emit failed\n"); rc = 1;

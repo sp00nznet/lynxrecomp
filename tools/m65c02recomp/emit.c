@@ -50,9 +50,16 @@ static int is_branch_target(const func_t *f, uint16_t a) {
     for (int i = 0; i < f->nlabels; i++) if (f->labels[i] == a) return 1;
     return 0;
 }
-/* Is `a` inside this function's emitted body (so `goto L_a` is valid)? */
+/* Decoded instruction-boundary bitmap for the function being emitted. With
+ * imperfect discovery some data gets decoded as code, so a branch target may
+ * land mid-"instruction"; a `goto` is only valid to a real boundary. Populated
+ * per function in emit_functions(). */
+static uint8_t g_boundary[0x10000];
+
+/* Is `a` a valid goto target: inside this function's body AND a real decoded
+ * instruction boundary? */
 static int in_func_range(const func_t *f, uint16_t a) {
-    return a >= f->start && a < f->end;
+    return a >= f->start && a < f->end && g_boundary[a];
 }
 static int is_func(const func_table_t *t, uint16_t a) {
     return func_table_find(t, a) != NULL;
@@ -262,6 +269,18 @@ int emit_functions(const char *outdir, const uint8_t *rom, size_t rom_size,
                 fn->start, fn->start, (uint16_t)(fn->end - 1),
                 fn->end - fn->start, fn->reaches_ret ? "" : ", no RTS");
         fprintf(f, "void lynx_func_%04X(void) {\n", fn->start);
+
+        /* pre-pass: mark this function's real instruction boundaries so a goto
+         * never targets data-decoded-as-code mid-instruction. */
+        for (uint16_t a = fn->start; a < fn->end; a++) g_boundary[a] = 0;
+        for (uint16_t a = fn->start; a < fn->end; ) {
+            size_t o = (size_t)(a - base);
+            uint8_t b[3] = { rom[o], (o+1<rom_size)?rom[o+1]:0, (o+2<rom_size)?rom[o+2]:0 };
+            insn_t di; m65c02_decode(b, a, &di);
+            g_boundary[a] = 1;
+            if (di.len == 0 || (size_t)(a - fn->start) + di.len > (size_t)(fn->end - fn->start)) break;
+            a = (uint16_t)(a + di.len);
+        }
 
         uint16_t addr = fn->start;
         while (addr < fn->end) {

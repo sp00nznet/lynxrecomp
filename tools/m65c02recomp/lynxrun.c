@@ -214,7 +214,28 @@ static int run_play(void) {
 static int run_play(void) { fprintf(stderr, "--play needs Windows; use --capture or headless.\n"); return 1; }
 #endif
 
+/* ---- snapshot: run N frames, then dump the full 64 KiB RAM ---- */
+static int run_snapshot(const char *outbin, int nframes) {
+    for (int f = 0; f < nframes; f++) { lynx_input_set(0, 0); run_until_flip(2000000); }
+    FILE *o = fopen(outbin, "wb");
+    if (!o) { fprintf(stderr, "cannot write %s\n", outbin); return 1; }
+    fwrite(lynx_ram, 1, 0x10000, o);
+    fclose(o);
+    printf("ran %d frames (%ld IRQs), dumped post-init RAM -> %s\n", nframes, g_irqs, outbin);
+    printf("  IRQ vector $FFFE=$%04X  jump table $1897: ",
+           (unsigned)(lynx_ram[0xFFFE] | (lynx_ram[0xFFFF] << 8)));
+    for (int i = 0; i < 8; i++)
+        printf("$%04X ", (unsigned)(lynx_ram[0x1897 + i*2] | (lynx_ram[0x1898 + i*2] << 8)));
+    printf("\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
+    if (argc >= 5 && !strcmp(argv[1], "--snapshot")) {
+        if (setup(argv[2], argv[3]) != 0) return 1;
+        int nframes = (argc > 5) ? atoi(argv[5]) : 60;
+        return run_snapshot(argv[4], nframes);
+    }
     if (argc >= 4 && !strcmp(argv[1], "--capture")) {
         if (setup(argv[2], argv[3]) != 0) return 1;
         const char *outdir = (argc > 4) ? argv[4] : ".";
@@ -234,7 +255,8 @@ int main(int argc, char **argv) {
             "usage:\n"
             "  %s <cart.lnx> <boot.img> <out.ppm> [maxInsns] [traceN] [traceAtIRQ]\n"
             "  %s --capture <cart.lnx> <boot.img> <outdir> [nframes] [stride] [btnHex] [atFrame] [holdFrames]\n"
-            "  %s --play <cart.lnx> <boot.img>\n", argv[0], argv[0], argv[0]);
+            "  %s --snapshot <cart.lnx> <boot.img> <out.bin> [nframes]\n"
+            "  %s --play <cart.lnx> <boot.img>\n", argv[0], argv[0], argv[0], argv[0]);
         return 2;
     }
     if (setup(argv[1], argv[2]) != 0) return 1;

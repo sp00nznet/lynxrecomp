@@ -1,0 +1,108 @@
+/* m65c02recomp - Atari Lynx static-recompiler driver (phase 1).
+ *
+ * Subcommands:
+ *   info <file.lnx>                  parse and print the .lnx header
+ *   dis  <file.lnx> [start] [count]  linear-sweep disassemble the cart image
+ *   emit <file.lnx> <outdir>         write generated/recomp_funcs.{c,h} skeleton
+ *
+ * `start` is a byte offset into the cart image (default 0); `count` is the
+ * instruction count (default: a screenful). This is the working spine of the
+ * recompiler - the decoder, .lnx parser and analyzer are real; the C emitter
+ * is a phase-1 placeholder (see emit.c / docs/ROADMAP.md).
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "lnx.h"
+#include "decode.h"
+#include "analyze.h"
+#include "emit.h"
+
+static uint8_t *read_file(const char *path, size_t *out_size) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n <= 0) { fclose(f); return NULL; }
+    uint8_t *buf = (uint8_t *)malloc((size_t)n);
+    if (!buf) { fclose(f); return NULL; }
+    if (fread(buf, 1, (size_t)n, f) != (size_t)n) { free(buf); fclose(f); return NULL; }
+    fclose(f);
+    *out_size = (size_t)n;
+    return buf;
+}
+
+static void print_info(const lnx_info_t *in, size_t file_size) {
+    printf("file size      : %zu bytes\n", file_size);
+    if (in->valid) {
+        printf("container      : BLL .lnx (header %d bytes)\n", LNX_HEADER_SIZE);
+        printf("cart name      : %s\n", in->cartname);
+        printf("manufacturer   : %s\n", in->manufname);
+        printf("version        : %u\n", in->version);
+        printf("bank0 page size: %u bytes\n", in->page_size_bank0);
+        printf("bank1 page size: %u bytes\n", in->page_size_bank1);
+        printf("rotation       : %u\n", in->rotation);
+    } else {
+        printf("container      : raw / headerless image\n");
+    }
+    printf("cart image     : %zu bytes\n", in->rom_size);
+}
+
+static void dis_cb(const insn_t *in, void *user) {
+    (void)user;
+    char text[48];
+    m65c02_format(in, text, sizeof(text));
+    printf("%04X  %02X %s\n", in->pc, in->opcode, text);
+}
+
+int main(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr,
+            "m65c02recomp - Atari Lynx static recompiler (phase 1)\n"
+            "usage:\n"
+            "  %s info <file.lnx>\n"
+            "  %s dis  <file.lnx> [start_off] [count]\n"
+            "  %s emit <file.lnx> <outdir>\n",
+            argv[0], argv[0], argv[0]);
+        return 2;
+    }
+
+    const char *cmd  = argv[1];
+    const char *path = argv[2];
+
+    size_t size = 0;
+    uint8_t *data = read_file(path, &size);
+    if (!data) { fprintf(stderr, "error: cannot read %s\n", path); return 1; }
+
+    lnx_info_t info;
+    if (lnx_parse(data, size, &info) != 0) {
+        fprintf(stderr, "error: not a valid image\n");
+        free(data);
+        return 1;
+    }
+
+    int rc = 0;
+    if (strcmp(cmd, "info") == 0) {
+        print_info(&info, size);
+    } else if (strcmp(cmd, "dis") == 0) {
+        size_t start = (argc > 3) ? (size_t)strtoul(argv[3], NULL, 0) : 0;
+        size_t count = (argc > 4) ? (size_t)strtoul(argv[4], NULL, 0) : 32;
+        /* Lynx cart pages are copied into RAM to run; absent a load map we
+         * use base 0x0200 (typical loader landing) purely for readable target
+         * arithmetic. See docs/BOOT.md - real bases come from the load map. */
+        uint16_t base = 0x0200;
+        printf("; linear sweep from cart offset 0x%zX, base $%04X\n", start, base);
+        analyze_linear(info.rom, info.rom_size, base, start, count, dis_cb, NULL);
+    } else if (strcmp(cmd, "emit") == 0) {
+        if (argc < 4) { fprintf(stderr, "error: emit needs <outdir>\n"); rc = 2; }
+        else rc = emit_skeleton(argv[3], &info, path) == 0 ? 0 : 1;
+        if (rc == 0) printf("wrote recomp_funcs.{c,h} skeleton to %s\n", argv[3]);
+    } else {
+        fprintf(stderr, "error: unknown command '%s'\n", cmd);
+        rc = 2;
+    }
+
+    free(data);
+    return rc;
+}

@@ -1,0 +1,35 @@
+# Build output
+build/
+build_all/
+out/
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.a
+
+# ROMs / game data are never committed
+roms/
+*.lnx
+*.lyx
+*.o65
+*.bin
+
+# IDA / Ghidra databases & exports
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.gpr
+*.rep
+
+# Editor / OS
+.vs/
+.vscode/
+.DS_Store
+Thumbs.db

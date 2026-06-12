@@ -21,78 +21,76 @@ is the thing other people fork to recompile *their* Lynx game.
 ## How it works
 
 ```
-  cart.lnx
-     │
-     ▼
-  ┌────────────────────┐   parses the BLL .lnx header, decodes 65SC02,
-  │  m65c02recomp      │   discovers functions, translates each routine to
-  │  (tools/)          │   readable C (lynx_func_<addr>)
-  └────────────────────┘
-     │  generated/recomp_funcs.c
-     ▼
-  ┌────────────────────┐   the runtime the generated C links against:
-  │  lynxrecomp (lib)  │   CPU state · memory dispatch · Suzy · Mikey ·
-  │  (src/, include/)  │   timers · input
-  └────────────────────┘
-     │
-     ▼   (+ a tiny per-game host: window, audio, input — in the game repo)
-  native Lynx game executable
+  cart.lnx ──► lynxexec ──► ram.bin        boot (RSA decrypt + cart load) to a
+              (boot ROM +    (game image,   resident RAM image, the game's jump
+               cart model)    tables built)  tables populated
+                  │
+                  ▼
+          ┌────────────────────┐   decode 65SC02, discover functions (following
+          │  m65c02recomp      │   computed-jump tables), translate each routine
+          │  (tools/)          │   to readable C: lynx_func_<addr>
+          └────────────────────┘
+                  │  generated/recomp_funcs.c
+                  ▼
+          ┌────────────────────┐   the runtime the generated C links against:
+          │  lynxrecomp (lib)  │   CPU helpers · dispatch · tick/IRQ · Suzy
+          │  (src/, include/)  │   (blitter, math) · Mikey (timers, video, audio)
+          └────────────────────┘
+                  │
+                  ▼   (+ a per-game host: load image, register, run, present)
+          native executable — the recompiled game runs
 ```
 
-## Status — phases 1–3
+## Status — it runs
 
-The full pipeline runs: **encrypted cart → decrypt → discover functions → emit
-readable C → compile → execute with correct effects.** What works today:
+The whole pipeline works end to end: **encrypted cart → RSA boot decrypt → full
+RAM image → discover functions → emit readable C → compile → run the recompiled
+C → rendered frames + audio.** Brought up on *Chip's Challenge*, the **recompiled
+C** (not an interpreter) renders the title screen and the 4-channel attract music
+plays. The CPU is genuinely recompiled to native C; only the fixed-function
+Suzy/Mikey hardware is emulated as a runtime — the same split as N64Recomp.
 
-- **`m65c02recomp` builds and runs.** Subcommands: `info`, `dis`,
-  `decrypt`/`loader` (recover the boot loader), **`recomp`** (decrypt + discover
-  + emit C), **`recompbin`** (same, on a raw image), `emit`.
-- **Boot-block decryption (phase 2).** RSA exponent-3, fixed 51-byte modulus,
-  shift-and-add modular arithmetic. **Verified** byte-identical to an independent
-  reference; recovered loader (entry `$0200`) is coherent 65SC02. See
-  [`docs/BOOT.md`](docs/BOOT.md).
-- **Function discovery + C emitter (phase 3).** Recursive-descent discovery
-  carves the code into functions; the emitter writes one readable
-  `lynx_func_<addr>` per routine — every line annotated with its address and
-  disassembly — lowered to centralized, flag-correct runtime helpers
-  (`recomp_rt.h`). Intra-function flow becomes labels + `goto`, `JSR` a C call,
-  escapes runtime hooks.
-- **Proven by execution.** `ctest` runs a synthetic-fixture pipeline test
-  (recompile → compile the generated C → run it → assert hardware/memory
-  effects) plus decoder/ALU unit tests. The same path recompiles the real
-  Chip's Challenge loader routine `$02C9` and executes it correctly.
-- **Full cart→RAM image** (`lynxexec`). A 65SC02 executor boots the cart with
-  the real boot ROM + a modeled cart-read interface and snapshots RAM at the
-  loader's hand-off — recovering Chip's Challenge's game entry (`$18B7`) and a
-  64 KiB image. `recompbin` then discovers and emits the **game's** functions
-  (reset, IRQ handler, main loop, …) as compilable C — not just the loader. See
-  [`docs/IMAGE.md`](docs/IMAGE.md).
-- **Runtime peripherals** the recompiled game drives, each unit-tested with
-  synthetic inputs (no game data): **Mikey timers + interrupts** (frame
-  cadence), **Mikey video readout** (framebuffer + palette → RGB), the **Suzy
-  sprite blitter** (SCB walk, packed/literal sprites, 1–4 bpp, flip), and the
-  **Suzy math unit** (multiply/divide).
-- **Execution driver — first pixels** (`lynxrun`). Boots the cart and runs the
-  game against the real runtime peripherals (CPU interpreter + blitter + timers/
-  IRQs + video), and renders the **Chip's Challenge credits screen** — the first
-  Lynx game on screen through this toolkit. See [`docs/RUN.md`](docs/RUN.md).
-- **Complete, validated WDC 65SC02 decoder** — all 256 opcodes incl. the
-  CMOS-only set, with correct mode lengths and branch targets.
-- **`.lnx` container parser** and the **runtime hardware model in code** (64 KiB
-  map + Suzy/Mikey dispatch, CPU state + flags). Peripherals are register-file
-  stubs at this stage.
+**The recompiler** (`m65c02recomp`)
+- Complete, validated **WDC 65SC02 decoder** — all 256 opcodes incl. the CMOS-only
+  set, correct mode lengths + branch targets.
+- **Boot-block decryption** — RSA exponent-3, fixed 51-byte modulus, shift-and-add
+  modular arithmetic. Verified byte-identical to an independent reference.
+  ([`docs/BOOT.md`](docs/BOOT.md))
+- **Recursive-descent discovery** that follows computed-jump tables read from the
+  image, + **a C emitter** producing one readable `lynx_func_<addr>` per routine —
+  every line annotated with its address and disassembly, lowered to centralized
+  flag-correct runtime helpers (`recomp_rt.h`). On Chip's Challenge: **317
+  functions, ~62 KB of code, zero dispatch gaps.**
+- Subcommands: `info`, `dis`, `decrypt`/`loader`, `recomp`/`recompbin`, `emit`.
 
-What's *not* done yet (see [`ROADMAP.md`](ROADMAP.md)):
+**Getting to runnable code** (`lynxexec`, `lynxrun --snapshot`)
+- A 65SC02 executor boots the cart with the real boot ROM + a modeled cart-read
+  interface and snapshots RAM (game resident, jump tables built). The recompiled
+  game then runs from that image. ([`docs/IMAGE.md`](docs/IMAGE.md))
 
-- Jump-table / computed-jump target resolution (the game's `JMP ($1897,X)`
-  dispatch is an external hook today); better function-boundary discovery on
-  game images; the hints format.
-- Audio (4 channels); blitter hardware scaling/stretch/tilt + collision; signed
-  math. Then: an execution driver that runs the recompiled game against these
-  peripherals (frame loop + IRQ dispatch) to put Chip's Challenge on screen.
+**The runtime** (the library the recompiled C links) — each unit-tested with
+synthetic inputs, no game data:
+- **CPU** state + flag-correct 65C02 semantic helpers; an `addr → function`
+  dispatch table for computed jumps / IRQ vectors; a cooperative tick model that
+  drives timers + delivers interrupts into the recompiled handler.
+- **Suzy** — the sprite blitter (SCB walk, packed/literal, 1–4 bpp, H/V flip,
+  per-type transparency + XOR) and the math unit (multiply/divide).
+- **Mikey** — timers + interrupts (frame cadence), video readout (framebuffer +
+  palette → RGB), and **4-channel audio** (LFSR + volume → PCM/WAV).
+
+**Running it** (`lynxrun`, and a per-game host)
+- `lynxrun` interprets a game against the runtime — the bring-up oracle — with
+  `--play` (live window), `--capture` (frame sequence), `--snapshot`, `--audio`.
+  The per-game host (in the game repo) runs the **recompiled** C directly.
+  ([`docs/RUN.md`](docs/RUN.md))
+
+What's *not* done yet (see [`ROADMAP.md`](ROADMAP.md)): blitter hardware
+scaling/stretch/tilt + collision; signed math; stereo/attenuation (Howard);
+live audio in `--play`; a full-fidelity recompiled cold boot. None are
+foundational — they're polish on a working pipeline.
 
 ```c
-// m65c02recomp recomp "Chip's Challenge (USA, Europe).lnx" out/  ->
+// each 65SC02 routine becomes a readable C function, every line annotated:
 /* lynx_func_02C9: $02C9-$02DD (21 bytes) */
 void lynx_func_02C9(void) {
     /* 02C9: LDY #$1F   */ lynx_ldy(0x1F);
@@ -130,11 +128,15 @@ on a platform with a deeper and better-loved library.
 ## Repository layout
 
 ```
-include/lynxrecomp/   runtime API (cpu, mem, suzy, mikey, timer, input)
-src/                  runtime implementation
-tools/m65c02recomp/   the recompiler: lnx parse · decode · analyze · emit
-docs/                 ARCHITECTURE · RECOMPILER · BOOT
-scripts/              corpus sweep (recompile-all harness)
+include/lynxrecomp/   runtime API (cpu, mem, recomp_rt, suzy, mikey, timer,
+                      input, audio)
+src/                  runtime: CPU helpers + dispatch/tick, Suzy blitter+math,
+                      Mikey timers/video/audio
+tools/m65c02recomp/   recompiler (lnx·decode·analyze·emit·lynxdec) + the
+                      interp core, lynxexec (boot→image), lynxrun (driver)
+tests/                ctest: decoder, ALU, blitter, math, audio, the recompile→
+                      run pipeline, and computed-jump dispatch
+docs/                 ARCHITECTURE · RECOMPILER · BOOT · IMAGE · RUN
 ```
 
 ## Documentation

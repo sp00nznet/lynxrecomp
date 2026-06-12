@@ -1,6 +1,6 @@
 # lynxrecomp
 
-**A static-recompilation toolkit for Atari Lynx games — the first one there is.**
+**A static-recompilation toolkit for Atari Lynx games — the first one we know of.**
 
 The Lynx (1989) is a near-perfect static-recompilation target and, somehow, has
 never had a recompiler. It runs a single, fully-documented CPU — a **WDC 65SC02**
@@ -118,9 +118,11 @@ cmake --build build --config Release
 
 ## Why Lynx (and why this is new ground)
 
-The Lynx has emulators (Handy, Mednafen, the libretro cores) but **no static
-recompiler** — nobody has turned a Lynx game into a native executable before.
-The hardware makes it tractable in a way most consoles aren't: one documented
+The Lynx has emulators (Handy, Mednafen, the libretro cores) but — as far as we
+can find — **no static recompiler**: static-recompilation tools exist for the
+N64, PSX and NES, but nobody seems to have turned a Lynx game into a native
+executable before. The hardware makes it tractable in a way most consoles
+aren't: one documented
 CPU, fixed-function video/audio, cartridge ROMs that are small and
 self-contained. It's the same recipe that makes the Virtual Boy a clean target,
 on a platform with a deeper and better-loved library.
@@ -148,13 +150,37 @@ docs/                 ARCHITECTURE · RECOMPILER · BOOT · IMAGE · RUN
 - [`docs/RUN.md`](docs/RUN.md) — the execution driver (`lynxrun`): running a game to rendered frames.
 - [`ROADMAP.md`](ROADMAP.md) — phased plan.
 
-## Credits
+## Credits & references
 
-- Cross-validation against IDA Pro / Ghidra (a 6502 processor module) as an
-  independent disassembly oracle.
-- Handy and Mednafen as behavioural references for Suzy/Mikey (reference only —
-  all code here is original).
+All code here is original, but it stands on a lot of prior reverse-engineering
+and documentation. With thanks to:
+
+- **[lynx-encryption-tools](https://github.com/dhuseby/lynx-encryption-tools)**
+  (Dave Huseby et al.) — the public reference for the Lynx boot-block RSA
+  decryption: the exponent-3 scheme, the public modulus, and the block framing.
+  The encryption was reverse-engineered and released publicly in 2001;
+  `lynxdec.c` reimplements the algorithm with its own bignum arithmetic and is
+  cross-checked against it.
+- **[cc65](https://github.com/cc65/cc65)** — its `_suzy.h` / `_mikey.h` headers
+  were the reference for the Suzy/Mikey hardware register layouts and bit fields.
+- **[Handy](https://github.com/libretro/libretro-handy)** and **Mednafen** —
+  behavioural references for the Suzy sprite-data format and per-type
+  transparency, the Mikey audio LFSR feedback taps, and the cartridge-read
+  protocol. Reference only; no code copied.
+- The **Epyx/Atari Lynx hardware specification** ("Handy Rev P") and Bastian
+  Schick's / the *Diary of an Atari Lynx developer* documentation for the
+  hardware details.
+- **IDA Pro / Ghidra** (with a 6502 processor module) as an independent
+  disassembly oracle for cross-validation.
+
+> Running a game needs Atari's 512-byte Lynx **boot ROM** (`lynxboot.img`) — it
+> is Atari's copyright and is **not** distributed here; supply your own (it's the
+> same image other Lynx emulators use). The RSA modulus baked into `lynxdec.c` is
+> Atari's published public key (a fact, not code). No ROMs or game data ship in
+> this repo. Game screenshots in the reference-game repo are renders shown for
+> documentation under fair use.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE). Independent, non-commercial preservation work;
+not affiliated with or endorsed by Atari.

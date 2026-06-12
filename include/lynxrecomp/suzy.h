@@ -25,6 +25,13 @@ enum {
     SUZY_COLLBASL = 0x0A, SUZY_COLLBASH = 0x0B,  /* collision buffer    */
     SUZY_SCBNEXTL = 0x10, SUZY_SCBNEXTH = 0x11,  /* next SCB pointer    */
     SUZY_SPRDLINE = 0x12,
+    /* Math unit: ABCD $52-55 (AB,CD factors / quotient), NP $56-57 (divisor),
+     * EFGH $60-63 (product / dividend), JKLM $6C-6F (remainder).
+     * Writing MATHA starts a multiply; writing MATHE starts a divide. */
+    SUZY_MATHD    = 0x52, SUZY_MATHC = 0x53, SUZY_MATHB = 0x54, SUZY_MATHA = 0x55,
+    SUZY_MATHP    = 0x56, SUZY_MATHN = 0x57,
+    SUZY_MATHH    = 0x60, SUZY_MATHE = 0x63,
+    SUZY_MATHM    = 0x6C, SUZY_MATHJ = 0x6F,
     SUZY_SPRCTL0  = 0x80, SUZY_SPRCTL1  = 0x81,
     SUZY_SPRCOLL  = 0x82,
     SUZY_SPRINIT  = 0x83,
@@ -45,5 +52,9 @@ extern lynx_suzy_t lynx_suzy;
 uint8_t lynx_suzy_read(uint8_t off);
 void    lynx_suzy_write(uint8_t off, uint8_t val);
 void    lynx_suzy_init(void);
+
+/* Run the sprite blitter now: walk the SCB chain at SCBNEXT and draw into the
+ * VIDBAS video buffer. Invoked when the game writes SPRGO. */
+void    lynx_suzy_blit(void);
 
 #endif /* LYNXRECOMP_SUZY_H */

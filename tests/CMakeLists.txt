@@ -19,6 +19,18 @@ target_include_directories(test_hw PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(test_hw PRIVATE lynxrecomp)
 add_test(NAME hw COMMAND test_hw)
 
+# --- Suzy sprite blitter ---
+add_executable(test_blit test_blit.c)
+target_include_directories(test_blit PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_blit PRIVATE lynxrecomp)
+add_test(NAME blit COMMAND test_blit)
+
+# --- Suzy math unit ---
+add_executable(test_math test_math.c)
+target_include_directories(test_math PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_math PRIVATE lynxrecomp)
+add_test(NAME math COMMAND test_math)
+
 # --- end-to-end pipeline: recompile fixture.bin, build the C, run it ---
 set(GEN ${CMAKE_CURRENT_BINARY_DIR}/gen)
 file(MAKE_DIRECTORY ${GEN})

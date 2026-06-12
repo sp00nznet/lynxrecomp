@@ -63,14 +63,22 @@ cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
 - [ ] Better function-boundary discovery on game images (code/data interleave)
       and the hints format (force-code, force-data, names, rename/HLE).
 
-## Phase 4 — the peripherals
+## Phase 4 — the peripherals (runtime)
 
-- [ ] Mikey timers + interrupt model (frame cadence comes from the vertical
-      timer underflow).
-- [ ] Suzy sprite blitter (SCB list walk, scaling/tilt) + math unit
-      (multiply/divide).
-- [ ] Mikey video DMA readout → 160×102×4bpp framebuffer + palette.
+- [x] **Mikey timers + interrupt model** (`timer.c`): 8 timers, clock dividers,
+      reload, linked cascade, underflow → interrupt latch; INTRST/INTSET. The
+      ~60 Hz frame cadence the game waits on.
+- [x] **Mikey video readout** (`video.c`): 160×102×4bpp framebuffer at DISPADR →
+      16-entry palette → RGBA (+ PPM dump).
+- [x] **Suzy sprite blitter** (`suzy.c`): SCB-chain walk, all four reload depths,
+      pen palette, packed + literal lines at 1–4 bpp, H/V flip, HOFF/VOFF
+      placement. (Hardware scaling/stretch/tilt + collision + per-type pen-0
+      transparency still to do.)
+- [x] **Suzy math unit** (`suzy.c`): 16×16→32 multiply and 32/16 divide
+      (unsigned; signed mode is a refinement).
+- [x] All four covered by `ctest` with synthetic inputs (no game data).
 - [ ] Audio (4 channels).
+- [ ] Blitter scaling/stretch/tilt + collision; signed math.
 
 ## Phase 5 — bring-up & corpus
 

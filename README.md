@@ -67,6 +67,11 @@ readable C → compile → execute with correct effects.** What works today:
   64 KiB image. `recompbin` then discovers and emits the **game's** functions
   (reset, IRQ handler, main loop, …) as compilable C — not just the loader. See
   [`docs/IMAGE.md`](docs/IMAGE.md).
+- **Runtime peripherals** the recompiled game drives, each unit-tested with
+  synthetic inputs (no game data): **Mikey timers + interrupts** (frame
+  cadence), **Mikey video readout** (framebuffer + palette → RGB), the **Suzy
+  sprite blitter** (SCB walk, packed/literal sprites, 1–4 bpp, flip), and the
+  **Suzy math unit** (multiply/divide).
 - **Complete, validated WDC 65SC02 decoder** — all 256 opcodes incl. the
   CMOS-only set, with correct mode lengths and branch targets.
 - **`.lnx` container parser** and the **runtime hardware model in code** (64 KiB
@@ -78,8 +83,9 @@ What's *not* done yet (see [`ROADMAP.md`](ROADMAP.md)):
 - Jump-table / computed-jump target resolution (the game's `JMP ($1897,X)`
   dispatch is an external hook today); better function-boundary discovery on
   game images; the hints format.
-- The Suzy blitter + math unit, Mikey timers/IRQs, video DMA readout, audio —
-  i.e. the game *runtime* (`lynxexec` models only enough hardware to load).
+- Audio (4 channels); blitter hardware scaling/stretch/tilt + collision; signed
+  math. Then: an execution driver that runs the recompiled game against these
+  peripherals (frame loop + IRQ dispatch) to put Chip's Challenge on screen.
 
 ```c
 // m65c02recomp recomp "Chip's Challenge (USA, Europe).lnx" out/  ->

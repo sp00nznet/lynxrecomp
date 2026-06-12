@@ -51,10 +51,34 @@ void lynx_unimpl(uint8_t opcode);
  * table. lynx_jmp_indirect() dispatches through it. */
 typedef void (*lynx_fn_t)(void);
 
+extern uint16_t lynx_last_ext_addr;               /* last unresolved dispatch addr */
+
 void lynx_register(uint16_t addr, lynx_fn_t fn);  /* map addr -> recompiled fn   */
 void lynx_call_addr(uint16_t addr);               /* call the fn registered @addr */
 int  lynx_has_func(uint16_t addr);                /* is a fn registered @addr?   */
 void lynx_dispatch_reset(void);                   /* clear the table             */
+
+/* Fallback for an address with no recompiled function (a discovery gap): a host
+ * can set this to an interpreter that runs the missing code, bridging recompiled
+ * and interpreted execution while coverage grows. NULL -> record + no-op. */
+extern void (*lynx_dispatch_fallback)(uint16_t addr);
+
+/* --- execution model: running the recompiled game ---
+ * The recompiled main loop never returns, so the runtime drives time and
+ * interrupts cooperatively. The emitter inserts lynx_tick() at loop back-edges
+ * (where the CPU spends time waiting): it advances the timers and, when a timer
+ * interrupt is pending and IRQs are unmasked, delivers it by *calling* the
+ * recompiled IRQ handler (the function registered at the $FFFE vector). The
+ * handler's RTI is emitted as lynx_rti() to pop the bytes the delivery pushed.
+ * A frame hook fires on each DISPADR (display) flip so the host can present and
+ * pace. */
+#define LYNX_TICK_US 4                            /* emulated us advanced per back-edge */
+
+void lynx_tick(void);                             /* loop back-edge: step time + IRQ   */
+void lynx_irq_deliver(void);                      /* push state + call $FFFE handler    */
+void lynx_rti(void);                              /* pop the IRQ-pushed P/PC            */
+
+extern void (*lynx_frame_hook)(void);             /* called on each DISPADR flip        */
 
 /* --- loads --- */
 static inline void lynx_lda(uint8_t v) { lynx_cpu.a = v; lynx_set_nz(v); }

@@ -23,6 +23,7 @@ add_library(lynxrecomp STATIC
     src/timer.c
     src/input.c
     src/recomp_rt.c
+    src/recomp_exec.c
     src/video.c
 )
 target_include_directories(lynxrecomp PUBLIC

@@ -2,6 +2,7 @@
  * here we route the interrupt registers to the latch and store the rest. */
 #include "lynxrecomp/mikey.h"
 #include "lynxrecomp/timer.h"
+#include "lynxrecomp/recomp_rt.h"   /* lynx_frame_hook */
 
 lynx_mikey_t lynx_mikey;
 
@@ -27,6 +28,10 @@ void lynx_mikey_write(uint8_t off, uint8_t val) {
             return;
         case MIKEY_INTSET:                 /* write 1s to set */
             lynx_irq_raise(val);
+            return;
+        case MIKEY_DISPADRH:               /* high byte written last = frame flip */
+            lynx_mikey.reg[off] = val;
+            if (lynx_frame_hook) lynx_frame_hook();
             return;
         default:
             lynx_mikey.reg[off] = val;

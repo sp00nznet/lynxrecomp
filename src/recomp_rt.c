@@ -16,12 +16,15 @@ uint8_t  lynx_last_unimpl   = 0;
 /* --- function dispatch table (addr -> recompiled fn) --- */
 static lynx_fn_t g_dispatch[0x10000];
 
+void (*lynx_dispatch_fallback)(uint16_t) = 0;
+
 void lynx_dispatch_reset(void)               { memset(g_dispatch, 0, sizeof(g_dispatch)); }
 void lynx_register(uint16_t addr, lynx_fn_t fn) { g_dispatch[addr] = fn; }
 int  lynx_has_func(uint16_t addr)            { return g_dispatch[addr] != 0; }
 void lynx_call_addr(uint16_t addr) {
-    if (g_dispatch[addr]) g_dispatch[addr]();   /* tail-call the recompiled fn */
-    else lynx_last_ext_addr = addr;             /* no recompiled fn here yet   */
+    if (g_dispatch[addr]) g_dispatch[addr]();        /* tail-call the recompiled fn */
+    else if (lynx_dispatch_fallback) lynx_dispatch_fallback(addr);  /* interpret gap */
+    else lynx_last_ext_addr = addr;                  /* record + no-op              */
 }
 
 static void default_boot_call(uint16_t addr)    { lynx_call_addr(addr); }

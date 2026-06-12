@@ -10,8 +10,9 @@
  *
  * Implemented: SCB chain walk, all four reload depths, the pen palette
  * (with reuse), packed + literal lines, 1-4 bpp, H/V flip, 1:1 placement with
- * the HOFF/VOFF screen origin. Not yet: hardware scaling/stretch/tilt,
- * collision, and the per-type pen-0 transparency rules (all pens are drawn).
+ * the HOFF/VOFF screen origin, per-type pen-0 transparency (so backgrounds show
+ * through sprites) + XOR sprites. Not yet: hardware scaling/stretch/tilt and
+ * collision.
  */
 #include "lynxrecomp/suzy.h"
 #include "lynxrecomp/mem.h"
@@ -63,13 +64,25 @@ static unsigned bits_get(bitr_t *b, int n) {
     return v;
 }
 
-/* Draw one pen (already palette-mapped to a 4-bit colour) at screen (x,y). */
-static void put_pixel(uint16_t vidbas, int x, int y, uint8_t pen) {
+/* Draw one palette-mapped pen at (x,y), honouring the sprite type's
+ * transparency. Only the two background types (0,1) draw pen 0; every other
+ * type treats pen 0 as transparent. Boundary types also skip their edge pens,
+ * and XOR sprites XOR the pen into the destination. (SPRCTL0 type values, from
+ * the Handy reference: 0/1 background, 2 noncollide, 3 boundary, 4 normal,
+ * 5 boundary-shadow, 6 shadow, 7 xor-shadow.) */
+static void blit_pixel(uint16_t vidbas, int x, int y, uint8_t pen, int type) {
+    if (type > 1) {                              /* non-background: transparency */
+        if (pen == 0x00) return;
+        if (type == 3 && pen == 0x0F) return;                       /* boundary */
+        if (type == 5 && (pen == 0x0E || pen == 0x0F)) return;      /* bnd-shadow */
+    }
     if (x < 0 || x >= LYNX_SCREEN_W || y < 0 || y >= LYNX_SCREEN_H) return;
     uint16_t a = (uint16_t)(vidbas + y * LYNX_SCREEN_PITCH + (x >> 1));
     uint8_t cur = dram_rd(a);
-    if (x & 1) cur = (uint8_t)((cur & 0xF0) | (pen & 0x0F));
-    else       cur = (uint8_t)((cur & 0x0F) | (pen << 4));
+    uint8_t old = (x & 1) ? (uint8_t)(cur & 0x0F) : (uint8_t)(cur >> 4);
+    uint8_t nw  = (type == 7) ? (uint8_t)(old ^ pen) : pen;         /* XOR sprite */
+    if (x & 1) cur = (uint8_t)((cur & 0xF0) | (nw & 0x0F));
+    else       cur = (uint8_t)((cur & 0x0F) | (nw << 4));
     dram_wr(a, cur);
 }
 
@@ -95,6 +108,7 @@ void lynx_suzy_blit(void) {
         uint16_t f = (uint16_t)(p + 11);
 
         int bpp     = ((ctl0 >> 6) & 3) + 1;
+        int type    = ctl0 & 0x07;                 /* sprite type -> transparency */
         int hflip   = (ctl0 & 0x20) != 0;
         int vflip   = (ctl0 & 0x10) != 0;
         int literal = (ctl1 & 0x80) != 0;
@@ -130,7 +144,7 @@ void lynx_suzy_blit(void) {
                         while (line_bits >= bpp) {
                             uint8_t px = pen[bits_get(&br, bpp) & 15]; line_bits -= bpp;
                             int x = hflip ? (sx - col) : (sx + col); col++;
-                            put_pixel(vidbas, x, y, px);
+                            blit_pixel(vidbas, x, y, px, type);
                         }
                     } else while (line_bits > 0) { /* packed: flagged packets */
                         int is_lit = (int)bits_get(&br, 1); line_bits -= 1;
@@ -139,7 +153,7 @@ void lynx_suzy_blit(void) {
                             for (int k = 0; k < cnt && line_bits >= bpp; k++) {
                                 uint8_t px = pen[bits_get(&br, bpp) & 15]; line_bits -= bpp;
                                 int x = hflip ? (sx - col) : (sx + col); col++;
-                                put_pixel(vidbas, x, y, px);
+                                blit_pixel(vidbas, x, y, px, type);
                             }
                         } else {                   /* packed run: count+1 copies */
                             int cnt = (int)bits_get(&br, 4); line_bits -= 4;
@@ -148,7 +162,7 @@ void lynx_suzy_blit(void) {
                             uint8_t px = pen[bits_get(&br, bpp) & 15]; line_bits -= bpp;
                             for (int k = 0; k <= cnt; k++) {
                                 int x = hflip ? (sx - col) : (sx + col); col++;
-                                put_pixel(vidbas, x, y, px);
+                                blit_pixel(vidbas, x, y, px, type);
                             }
                         }
                     }

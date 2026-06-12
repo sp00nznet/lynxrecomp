@@ -61,6 +61,12 @@ readable C → compile → execute with correct effects.** What works today:
   (recompile → compile the generated C → run it → assert hardware/memory
   effects) plus decoder/ALU unit tests. The same path recompiles the real
   Chip's Challenge loader routine `$02C9` and executes it correctly.
+- **Full cart→RAM image** (`lynxexec`). A 65SC02 executor boots the cart with
+  the real boot ROM + a modeled cart-read interface and snapshots RAM at the
+  loader's hand-off — recovering Chip's Challenge's game entry (`$18B7`) and a
+  64 KiB image. `recompbin` then discovers and emits the **game's** functions
+  (reset, IRQ handler, main loop, …) as compilable C — not just the loader. See
+  [`docs/IMAGE.md`](docs/IMAGE.md).
 - **Complete, validated WDC 65SC02 decoder** — all 256 opcodes incl. the
   CMOS-only set, with correct mode lengths and branch targets.
 - **`.lnx` container parser** and the **runtime hardware model in code** (64 KiB
@@ -69,11 +75,11 @@ readable C → compile → execute with correct effects.** What works today:
 
 What's *not* done yet (see [`ROADMAP.md`](ROADMAP.md)):
 
-- The full cart→RAM image + true game entry — the input that lets discovery
-  reach the *game's* code, not just the loader (model the loader/boot-ROM
-  cart-read, or snapshot an emulator).
-- Jump-table / computed-jump target resolution; the hints format.
-- The Suzy blitter + math unit, Mikey timers/IRQs, video DMA readout, audio.
+- Jump-table / computed-jump target resolution (the game's `JMP ($1897,X)`
+  dispatch is an external hook today); better function-boundary discovery on
+  game images; the hints format.
+- The Suzy blitter + math unit, Mikey timers/IRQs, video DMA readout, audio —
+  i.e. the game *runtime* (`lynxexec` models only enough hardware to load).
 
 ```c
 // m65c02recomp recomp "Chip's Challenge (USA, Europe).lnx" out/  ->
@@ -126,6 +132,7 @@ scripts/              corpus sweep (recompile-all harness)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Lynx hardware, memory map, Suzy/Mikey.
 - [`docs/RECOMPILER.md`](docs/RECOMPILER.md) — how `m65c02recomp` works and the readability goals.
 - [`docs/BOOT.md`](docs/BOOT.md) — the encrypted boot block and how we get to runnable code.
+- [`docs/IMAGE.md`](docs/IMAGE.md) — booting the cart to a full RAM image + game entry (`lynxexec`).
 - [`ROADMAP.md`](ROADMAP.md) — phased plan.
 
 ## Credits

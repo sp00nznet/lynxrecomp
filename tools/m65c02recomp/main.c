@@ -93,11 +93,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "dis") == 0) {
         size_t start = (argc > 3) ? (size_t)strtoul(argv[3], NULL, 0) : 0;
         size_t count = (argc > 4) ? (size_t)strtoul(argv[4], NULL, 0) : 32;
-        /* Lynx cart pages are copied into RAM to run; absent a load map we
-         * use base 0x0200 (typical loader landing) purely for readable target
-         * arithmetic. See docs/BOOT.md - real bases come from the load map. */
-        uint16_t base = 0x0200;
-        printf("; linear sweep from cart offset 0x%zX, base $%04X\n", start, base);
+        /* Optional 4th arg: the CPU base address that offset 0 maps to
+         * (e.g. 0xFE00 to disassemble the boot ROM). Default 0x0200. */
+        uint16_t base = (argc > 5) ? (uint16_t)strtoul(argv[5], NULL, 0) : 0x0200;
+        printf("; linear sweep from offset 0x%zX, base $%04X\n", start, base);
         analyze_linear(info.rom, info.rom_size, base, start, count, dis_cb, NULL);
     } else if (strcmp(cmd, "decrypt") == 0) {
         if (argc < 4) { fprintf(stderr, "error: decrypt needs <loader.bin>\n"); rc = 2; }

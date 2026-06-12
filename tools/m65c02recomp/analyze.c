@@ -98,8 +98,17 @@ static void discover_one(disc_t *d, func_table_t *t, uint16_t fs) {
                 break;
             case CF_JMP:
                 if (in.target != 0 && in_image(d, in.target)) {
-                    add_label(f, in.target);          /* intra-function goto */
-                    if (in.target > maxt) maxt = in.target;
+                    add_label(f, in.target);
+                    if (in.target <= end) {
+                        /* backward/local jump (into already-decoded code) -
+                         * stays in this function (e.g. a loop, or BRA $next). */
+                        if (in.target > maxt) maxt = in.target;
+                    } else {
+                        /* forward jump past the current extent: a tail jump to
+                         * a separate routine. Make it its own function rather
+                         * than pulling the bytes in between in as code. */
+                        push_func(d, t, in.target);
+                    }
                 } else if (in.target != 0) {
                     add_ext(t, in.target);            /* tail jump out of image */
                 }

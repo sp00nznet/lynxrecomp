@@ -52,11 +52,16 @@ cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
       compiles and **executes** with correct hardware/memory effects — covered
       by `ctest` (unit tests + a synthetic-fixture pipeline test), and
       demonstrated on the real Chip's Challenge loader routine `$02C9`.
-- [ ] Full RAM image: model the loader + boot-ROM cart-read (or emulator
-      snapshot) → complete cart→RAM load map + true game entry (the input that
-      lets discovery reach the *game's* code, not just the loader).
-- [ ] Jump-table / computed-jump (`JMP (abs,X)`, `JMP (zp)`) target resolution.
-- [ ] Hints format (force-code, force-data, function names, rename/HLE).
+- [x] **Full RAM image + true game entry** (`lynxexec`): a 65SC02 executor boots
+      the cart with the real boot ROM + a modeled cart-read interface and
+      snapshots RAM at the loader's `JMP ($004E)`. On Chip's Challenge it reaches
+      game entry `$18B7` and dumps a 64 KiB image; `recompbin` then discovers and
+      emits the **game's** functions (reset, IRQ `$1C40`, main loop, …) as
+      compilable C. See [`docs/IMAGE.md`](docs/IMAGE.md).
+- [ ] Jump-table / computed-jump (`JMP (abs,X)`, `JMP (zp)`) target resolution
+      (the game's `JMP ($1897,X)` dispatch is currently an external hook).
+- [ ] Better function-boundary discovery on game images (code/data interleave)
+      and the hints format (force-code, force-data, names, rename/HLE).
 
 ## Phase 4 — the peripherals
 

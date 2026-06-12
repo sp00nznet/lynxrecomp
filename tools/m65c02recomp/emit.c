@@ -44,26 +44,18 @@ int emit_skeleton(const char *outdir, const lnx_info_t *info,
 
 /* ---- real emitter ---- */
 
-/* Is `a` reachable as a goto target inside this function (start, or a recorded
- * branch/jump target)? Used to resolve goto vs. call. */
-static int is_label(const func_t *f, uint16_t a) {
-    if (a == f->start) return 1;
-    for (int i = 0; i < f->nlabels; i++) if (f->labels[i] == a) return 1;
-    return 0;
-}
 /* Is `a` an actual branch/jump target (so a C label must be emitted there)?
  * Excludes the implicit start unless something branches back to it. */
 static int is_branch_target(const func_t *f, uint16_t a) {
     for (int i = 0; i < f->nlabels; i++) if (f->labels[i] == a) return 1;
     return 0;
 }
+/* Is `a` inside this function's emitted body (so `goto L_a` is valid)? */
+static int in_func_range(const func_t *f, uint16_t a) {
+    return a >= f->start && a < f->end;
+}
 static int is_func(const func_table_t *t, uint16_t a) {
     return func_table_find(t, a) != NULL;
-}
-static int in_image(const func_table_t *t, const uint8_t *rom, size_t sz,
-                    uint16_t base, uint16_t a) {
-    (void)t; (void)rom;
-    return a >= base && (size_t)(a - base) < sz;
 }
 
 /* Effective-address C expression for the addressing modes that touch memory. */
@@ -106,6 +98,7 @@ static void emit_insn(FILE *f, const insn_t *in, const func_t *fn,
                       uint16_t base) {
     const char *m = in->mnemonic;
     char a[80], v[96];
+    (void)rom; (void)sz; (void)base;
 
     /* simple register / flag ops first */
     if (!strcmp(m,"NOP")) { fprintf(f, "; /* nop */"); return; }
@@ -180,14 +173,24 @@ static void emit_insn(FILE *f, const insn_t *in, const func_t *fn,
     /* Rockwell bit ops on zero page */
     if (!strncmp(m,"RMB",3)) { fprintf(f, "{ uint8_t _z = 0x%02X; lynx_mem_write(_z, lynx_mem_read(_z) & (uint8_t)~(1u<<%d)); }", in->operand, in->bit); return; }
     if (!strncmp(m,"SMB",3)) { fprintf(f, "{ uint8_t _z = 0x%02X; lynx_mem_write(_z, lynx_mem_read(_z) | (uint8_t)(1u<<%d)); }", in->operand, in->bit); return; }
-    if (!strncmp(m,"BBR",3)) { fprintf(f, "if ((lynx_mem_read(0x%02X) & (1u<<%d)) == 0) goto L_%04X;", in->operand, in->bit, in->target); return; }
-    if (!strncmp(m,"BBS",3)) { fprintf(f, "if ((lynx_mem_read(0x%02X) & (1u<<%d)) != 0) goto L_%04X;", in->operand, in->bit, in->target); return; }
+    if (!strncmp(m,"BBR",3) || !strncmp(m,"BBS",3)) {
+        char cond[64];
+        snprintf(cond, sizeof(cond), "(lynx_mem_read(0x%02X) & (1u<<%d)) %s 0",
+                 in->operand, in->bit, (m[2] == 'R') ? "==" : "!=");
+        if (in_func_range(fn, in->target))
+            fprintf(f, "if (%s) goto L_%04X;", cond, in->target);
+        else if (is_func(t, in->target))
+            fprintf(f, "if (%s) { lynx_func_%04X(); return; }", cond, in->target);
+        else
+            fprintf(f, "if (%s) { lynx_ext_jmp(0x%04X); return; }", cond, in->target);
+        return;
+    }
 
     /* conditional branches */
     {
         const char *cond = branch_cond(m);
         if (cond) {
-            if (is_label(fn, in->target))
+            if (in_func_range(fn, in->target))
                 fprintf(f, "if (%s) goto L_%04X;", cond, in->target);
             else if (is_func(t, in->target))
                 fprintf(f, "if (%s) { lynx_func_%04X(); return; }", cond, in->target);
@@ -201,9 +204,8 @@ static void emit_insn(FILE *f, const insn_t *in, const func_t *fn,
     if (!strcmp(m,"BRA") || !strcmp(m,"JMP")) {
         if (in->mode == AM_IND) { fprintf(f, "lynx_jmp_indirect(lynx_mem_read16(0x%04X)); return;", in->operand); return; }
         if (in->mode == AM_IAX) { fprintf(f, "lynx_jmp_indirect(lynx_mem_read16((uint16_t)(0x%04X + lynx_cpu.x))); return;", in->operand); return; }
-        if (is_label(fn, in->target))      fprintf(f, "goto L_%04X;", in->target);
+        if (in_func_range(fn, in->target)) fprintf(f, "goto L_%04X;", in->target);
         else if (is_func(t, in->target))   fprintf(f, "lynx_func_%04X(); return;", in->target);
-        else if (in_image(t, rom, sz, base, in->target)) fprintf(f, "goto L_%04X; /* intra */", in->target);
         else                               fprintf(f, "lynx_ext_jmp(0x%04X); return;", in->target);
         return;
     }

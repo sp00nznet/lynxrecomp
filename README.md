@@ -72,6 +72,10 @@ readable C → compile → execute with correct effects.** What works today:
   cadence), **Mikey video readout** (framebuffer + palette → RGB), the **Suzy
   sprite blitter** (SCB walk, packed/literal sprites, 1–4 bpp, flip), and the
   **Suzy math unit** (multiply/divide).
+- **Execution driver — first pixels** (`lynxrun`). Boots the cart and runs the
+  game against the real runtime peripherals (CPU interpreter + blitter + timers/
+  IRQs + video), and renders the **Chip's Challenge credits screen** — the first
+  Lynx game on screen through this toolkit. See [`docs/RUN.md`](docs/RUN.md).
 - **Complete, validated WDC 65SC02 decoder** — all 256 opcodes incl. the
   CMOS-only set, with correct mode lengths and branch targets.
 - **`.lnx` container parser** and the **runtime hardware model in code** (64 KiB
@@ -139,6 +143,7 @@ scripts/              corpus sweep (recompile-all harness)
 - [`docs/RECOMPILER.md`](docs/RECOMPILER.md) — how `m65c02recomp` works and the readability goals.
 - [`docs/BOOT.md`](docs/BOOT.md) — the encrypted boot block and how we get to runnable code.
 - [`docs/IMAGE.md`](docs/IMAGE.md) — booting the cart to a full RAM image + game entry (`lynxexec`).
+- [`docs/RUN.md`](docs/RUN.md) — the execution driver (`lynxrun`): running a game to rendered frames.
 - [`ROADMAP.md`](ROADMAP.md) — phased plan.
 
 ## Credits

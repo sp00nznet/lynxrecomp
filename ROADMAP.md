@@ -82,7 +82,16 @@ cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
 
 ## Phase 5 — bring-up & corpus
 
-- [ ] Boot Chip's Challenge to first pixels, then playable.
+- [x] **First pixels.** `lynxrun` (the execution driver, `docs/RUN.md`) boots the
+      cart, runs the game against the real runtime peripherals (blitter, timers/
+      IRQs, video), and renders the **Chip's Challenge credits screen** — the
+      first Lynx game on screen through this toolkit. Two real hardware bugs
+      fixed in the process: Suzy/video DMA must bypass the MAPCTL overlay (write
+      DRAM directly), and the timer link chain is `0→2→4→1→3→5→7` (so VBL fires).
+- [ ] Run the *recompiled* C (not the interpreter) against the peripherals:
+      needs computed-jump (`JMP ($1897,X)`) resolution + a main-loop/IRQ
+      execution model. `lynxrun` is the reference oracle.
+- [ ] Playable: input wired to a host window; audio.
 - [ ] `scripts/sweep` over the whole Lynx library as a correctness corpus
       (recompile-all, like the vbrecomp approach) — each ROM that fails is a
       concrete decoder/analysis/codegen bug.

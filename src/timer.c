@@ -18,8 +18,15 @@ uint8_t lynx_irq_pending(void) { return lynx_irq_latch != 0; }
 void    lynx_irq_ack(uint8_t mask)   { lynx_irq_latch &= (uint8_t)~mask; }
 void    lynx_irq_raise(uint8_t mask) { lynx_irq_latch |= mask; }
 
+/* Lynx timer link chain: a "linked" timer (clock == 7) counts on the underflow
+ * of a specific predecessor, in the order 0 -> 2 -> 4 -> 1 -> 3 -> 5 -> 7.
+ * link_succ[i] is the timer driven by timer i's underflow (-1 = none).
+ * Timer 0 is the horizontal (HBL) timer and timer 2 the vertical (VBL); 2 being
+ * linked to 0 is what makes the ~60 Hz frame interrupt fire. */
+static const int link_succ[8] = { 2, 3, 4, 5, 1, 7, -1, -1 };
+
 /* One count tick of timer i; on underflow reload/flag/interrupt and cascade
- * into a linked timer (clock == 7). */
+ * into the linked successor timer. */
 static void tick(int i) {
     uint8_t ctlA = *treg(i, 1);
     uint8_t *cnt = treg(i, 2);
@@ -28,10 +35,10 @@ static void tick(int i) {
         if (ctlA & TCTLA_RELOAD) *cnt = *treg(i, 0);
         *treg(i, 3) |= TCTLB_DONE | TCTLB_BORROWOUT;
         if (ctlA & TCTLA_INT) lynx_irq_latch |= (uint8_t)(1u << i);
-        /* cascade: a higher timer set to "linked" advances on our underflow */
-        if (i < 7) {
-            uint8_t nA = *treg(i + 1, 1);
-            if ((nA & TCTLA_COUNT) && (nA & TCTLA_CLOCK) == 7) tick(i + 1);
+        int succ = link_succ[i];
+        if (succ >= 0) {
+            uint8_t nA = *treg(succ, 1);
+            if ((nA & TCTLA_COUNT) && (nA & TCTLA_CLOCK) == 7) tick(succ);
         }
     } else {
         (*cnt)--;

@@ -39,6 +39,14 @@ uint8_t lynx_suzy_read(uint8_t off) {
 
 /* ---- blitter ---- */
 
+/* Suzy is a DMA engine: it reads SCBs / sprite data and writes the video
+ * buffer in the physical DRAM directly, *bypassing* the MAPCTL hardware
+ * overlay. So a video buffer placed at e.g. $E000 (extending past $FC00) writes
+ * to RAM, not to the Suzy/Mikey registers - hence these go straight to
+ * lynx_ram[] rather than through lynx_mem_read/write. */
+static uint8_t  dram_rd(uint16_t a)            { return lynx_ram[a]; }
+static void     dram_wr(uint16_t a, uint8_t v) { lynx_ram[a] = v; }
+
 static uint16_t sreg16(uint8_t off) {
     return (uint16_t)(lynx_suzy.reg[off] | (lynx_suzy.reg[off + 1] << 8));
 }
@@ -48,7 +56,7 @@ typedef struct { uint16_t addr; int bit; } bitr_t;
 static unsigned bits_get(bitr_t *b, int n) {
     unsigned v = 0;
     while (n-- > 0) {
-        uint8_t byte = lynx_mem_read(b->addr);
+        uint8_t byte = dram_rd(b->addr);
         v = (v << 1) | ((byte >> (7 - b->bit)) & 1);
         if (++b->bit == 8) { b->bit = 0; b->addr++; }
     }
@@ -59,10 +67,10 @@ static unsigned bits_get(bitr_t *b, int n) {
 static void put_pixel(uint16_t vidbas, int x, int y, uint8_t pen) {
     if (x < 0 || x >= LYNX_SCREEN_W || y < 0 || y >= LYNX_SCREEN_H) return;
     uint16_t a = (uint16_t)(vidbas + y * LYNX_SCREEN_PITCH + (x >> 1));
-    uint8_t cur = lynx_mem_read(a);
+    uint8_t cur = dram_rd(a);
     if (x & 1) cur = (uint8_t)((cur & 0xF0) | (pen & 0x0F));
     else       cur = (uint8_t)((cur & 0x0F) | (pen << 4));
-    lynx_mem_write(a, cur);
+    dram_wr(a, cur);
 }
 
 void lynx_suzy_blit(void) {
@@ -77,13 +85,13 @@ void lynx_suzy_blit(void) {
     int guard_sprites = 0;
     while (scb != 0 && guard_sprites++ < 256) {
         uint16_t p = scb;
-        uint8_t ctl0 = lynx_mem_read(p + 0);
-        uint8_t ctl1 = lynx_mem_read(p + 1);
-        /* uint8_t coll = lynx_mem_read(p + 2); */
-        uint16_t next = (uint16_t)(lynx_mem_read(p + 3) | (lynx_mem_read(p + 4) << 8));
-        uint16_t data = (uint16_t)(lynx_mem_read(p + 5) | (lynx_mem_read(p + 6) << 8));
-        int16_t  hpos = (int16_t)(lynx_mem_read(p + 7) | (lynx_mem_read(p + 8) << 8));
-        int16_t  vpos = (int16_t)(lynx_mem_read(p + 9) | (lynx_mem_read(p + 10) << 8));
+        uint8_t ctl0 = dram_rd(p + 0);
+        uint8_t ctl1 = dram_rd(p + 1);
+        /* uint8_t coll = dram_rd(p + 2); */
+        uint16_t next = (uint16_t)(dram_rd(p + 3) | (dram_rd(p + 4) << 8));
+        uint16_t data = (uint16_t)(dram_rd(p + 5) | (dram_rd(p + 6) << 8));
+        int16_t  hpos = (int16_t)(dram_rd(p + 7) | (dram_rd(p + 8) << 8));
+        int16_t  vpos = (int16_t)(dram_rd(p + 9) | (dram_rd(p + 10) << 8));
         uint16_t f = (uint16_t)(p + 11);
 
         int bpp     = ((ctl0 >> 6) & 3) + 1;
@@ -98,7 +106,7 @@ void lynx_suzy_blit(void) {
         if (!nopal) {                              /* load pen palette          */
             int npens = 1 << bpp;
             for (int i = 0; i < npens; i += 2) {
-                uint8_t byte = lynx_mem_read(f++);
+                uint8_t byte = dram_rd(f++);
                 pen[i]     = (uint8_t)(byte >> 4);
                 pen[i + 1] = (uint8_t)(byte & 0x0F);
             }
@@ -110,7 +118,7 @@ void lynx_suzy_blit(void) {
             int line = 0, guard_lines = 0;
             uint16_t dp = data;
             while (guard_lines++ < LYNX_SCREEN_H * 2) {
-                uint8_t offset = lynx_mem_read(dp);
+                uint8_t offset = dram_rd(dp);
                 if (offset == 0) break;            /* end of sprite */
                 int line_bits = (offset - 1) * 8;
                 bitr_t br = { (uint16_t)(dp + 1), 0 };

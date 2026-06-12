@@ -38,12 +38,13 @@ static void test_timer(void) {
     lynx_timer_step(4);
     CHECK(lynx_mikey.reg[2] == 0, "clk2: 4us -> 1 tick, count %u (exp 0)", lynx_mikey.reg[2]);
 
-    /* Linked cascade: timer1 clock=7 (linked), advances when timer0 underflows. */
+    /* Linked cascade: timer2 (VBL) is linked (clock 7) to timer0 (HBL) per the
+     * Lynx chain 0->2; timer2 advances when timer0 underflows. */
     lynx_mikey_init();
     lynx_mikey.reg[0] = 0; lynx_mikey.reg[1] = TCTLA_COUNT | TCTLA_RELOAD; lynx_mikey.reg[2] = 0;   /* t0 underflows every us */
-    lynx_mikey.reg[4] = 0; lynx_mikey.reg[5] = TCTLA_COUNT | TCTLA_RELOAD | 7; lynx_mikey.reg[6] = 2; /* t1 linked, count 2 */
-    lynx_timer_step(2);   /* t0 underflows twice -> t1 ticks twice: 2->1->0 */
-    CHECK(lynx_mikey.reg[6] == 0, "linked timer counted to %u (exp 0)", lynx_mikey.reg[6]);
+    lynx_mikey.reg[8] = 0; lynx_mikey.reg[9] = TCTLA_COUNT | TCTLA_RELOAD | 7; lynx_mikey.reg[10] = 2; /* t2 linked, count 2 */
+    lynx_timer_step(2);   /* t0 underflows twice -> t2 ticks twice: 2->1->0 */
+    CHECK(lynx_mikey.reg[10] == 0, "linked timer2 counted to %u (exp 0)", lynx_mikey.reg[10]);
 }
 
 static void test_video(void) {

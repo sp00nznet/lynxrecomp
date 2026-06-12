@@ -10,6 +10,10 @@
 #include "lynxrecomp/mem.h"
 #include <stdio.h>
 
+/* The video DMA reads the framebuffer straight from DRAM (like Suzy), bypassing
+ * the MAPCTL hardware overlay - so a buffer at e.g. $E000 reads RAM, not the
+ * $FC00+ registers. Hence lynx_ram[] rather than lynx_mem_read(). */
+
 static uint8_t exp4(uint8_t v) { return (uint8_t)((v & 0x0F) * 17); }
 
 uint32_t lynx_palette_color(int index) {
@@ -28,7 +32,7 @@ void lynx_video_render(uint32_t *out) {
     for (int row = 0; row < LYNX_SCREEN_H; row++) {
         uint16_t line = (uint16_t)(base + row * LYNX_SCREEN_PITCH);
         for (int col = 0; col < LYNX_SCREEN_W; col++) {
-            uint8_t byte = lynx_mem_read((uint16_t)(line + (col >> 1)));
+            uint8_t byte = lynx_ram[(uint16_t)(line + (col >> 1))];
             uint8_t pen  = (col & 1) ? (uint8_t)(byte & 0x0F) : (uint8_t)(byte >> 4);
             out[row * LYNX_SCREEN_W + col] = lynx_palette_color(pen);
         }

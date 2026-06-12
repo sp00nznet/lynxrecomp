@@ -12,11 +12,22 @@ add_executable(m65c02recomp
 # snapshot the post-boot RAM image + game entry for the recompiler.
 add_executable(lynxexec
     lynxexec.c
+    interp.c
     decode.c
     lnx.c
 )
 
-foreach(t m65c02recomp lynxexec)
+# lynxrun - execution driver: runs a game against the runtime peripherals and
+# renders a frame. Links the lynxrecomp runtime library.
+add_executable(lynxrun
+    lynxrun.c
+    interp.c
+    decode.c
+    lnx.c
+)
+target_link_libraries(lynxrun PRIVATE lynxrecomp)
+
+foreach(t m65c02recomp lynxexec lynxrun)
     set_target_properties(${t} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
     if(MSVC)
         target_compile_options(${t} PRIVATE /W3)

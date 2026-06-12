@@ -1,11 +1,11 @@
 /* analyze.h - control-flow analysis over decoded 65SC02 code.
  *
- * Phase 1 ships a linear sweep (disassemble byte-after-byte from a start
- * offset) which is enough to dump code and validate the decoder. Phase 2 adds
- * recursive-descent function discovery (follow JSR/JMP/branch targets, build a
- * function table) - the same shape used by vbrecomp/N64Recomp. The hard part
- * on a 6502 is that code and data are freely interleaved and there is no clean
- * ABI, so discovery is seeded from the reset/IRQ vectors plus user hints.
+ * Phase 1 shipped a linear sweep. Phase 3 adds recursive-descent function
+ * discovery: seed from entry points, follow calls/branches/jumps, and carve the
+ * code into functions the emitter turns into C. The hard part on a 6502 is that
+ * code and data interleave and computed jumps hide targets; discovery is seeded
+ * from known entries (and later, hints) and does not follow into addresses
+ * outside the supplied image (e.g. the boot ROM at $FE00+).
  */
 #ifndef M65C02_ANALYZE_H
 #define M65C02_ANALYZE_H
@@ -24,10 +24,36 @@ size_t analyze_linear(const uint8_t *rom, size_t rom_size, uint16_t base,
                       size_t start_off, size_t count,
                       insn_cb cb, void *user);
 
-/* TODO(phase 2): recursive-descent discovery seeded from vectors + hints,
- * producing a function table (addr,size,kind). Declared here to fix the API. */
-/* int analyze_discover(const uint8_t *rom, size_t rom_size, uint16_t base,
- *                      const uint16_t *seeds, size_t nseeds,
- *                      func_table_t *out); */
+/* ---- function discovery ---- */
+
+#define MAX_FUNCS   1024
+#define MAX_LABELS  256
+
+typedef struct {
+    uint16_t start;                 /* first address                       */
+    uint16_t end;                   /* one past the last instruction byte  */
+    uint16_t labels[MAX_LABELS];    /* in-function branch targets (sorted) */
+    int      nlabels;
+    int      reaches_ret;           /* contains an RTS/RTI                 */
+} func_t;
+
+typedef struct {
+    func_t   funcs[MAX_FUNCS];
+    int      nfuncs;
+    /* external call/jump targets (e.g. boot ROM $FE00) - recorded, not emitted */
+    uint16_t ext[MAX_FUNCS];
+    int      next;
+} func_table_t;
+
+/* Recursive-descent discovery. Code image is `rom`/`rom_size` mapped at `base`.
+ * Seeds are CPU addresses to start from (e.g. the loader entry). Targets that
+ * fall outside [base, base+rom_size) are recorded as external, not followed.
+ * Returns the number of functions discovered. */
+int analyze_discover(const uint8_t *rom, size_t rom_size, uint16_t base,
+                     const uint16_t *seeds, size_t nseeds,
+                     func_table_t *out);
+
+/* Find the function starting exactly at `addr`, or NULL. */
+const func_t *func_table_find(const func_table_t *t, uint16_t addr);
 
 #endif /* M65C02_ANALYZE_H */

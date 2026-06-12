@@ -22,6 +22,7 @@ add_library(lynxrecomp STATIC
     src/mikey.c
     src/timer.c
     src/input.c
+    src/recomp_rt.c
 )
 target_include_directories(lynxrecomp PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -29,3 +30,9 @@ target_include_directories(lynxrecomp PUBLIC
 
 # --- recompiler CLI --------------------------------------------------------
 add_subdirectory(tools/m65c02recomp)
+
+# --- tests (only when lynxrecomp is the top-level project, not a submodule) --
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

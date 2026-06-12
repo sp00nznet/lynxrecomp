@@ -39,47 +39,56 @@ is the thing other people fork to recompile *their* Lynx game.
   native Lynx game executable
 ```
 
-## Status — phases 1–2
+## Status — phases 1–3
 
-What works today:
+The full pipeline runs: **encrypted cart → decrypt → discover functions → emit
+readable C → compile → execute with correct effects.** What works today:
 
-- **`m65c02recomp` builds and runs.** Subcommands: `info` (parse a `.lnx`
-  header), `dis` (linear-sweep disassembler), **`decrypt` / `loader`** (recover
-  and disassemble the encrypted boot loader), `emit` (write a `recomp_funcs`
-  skeleton).
-- **Boot-block decryption (phase 2).** Retail carts boot through an
-  RSA-encrypted secondary loader; `lynxdec.c` decrypts it (exponent 3, fixed
-  51-byte modulus, shift-and-add modular arithmetic). **Verified**: byte-identical
-  to an independent reference implementation, and the recovered 250 bytes
-  disassemble as coherent 65SC02 (entry `$0200`). This is what gets the
-  recompiler from an encrypted cart to real code — see [`docs/BOOT.md`](docs/BOOT.md).
-- **A complete, validated WDC 65SC02 decoder** — all 256 opcodes including the
-  CMOS-only instructions (`BRA`, `PHX/PHY/PLX/PLY`, `STZ`, `TRB/TSB`, `(zp)`
-  indirect, `JMP (abs,X)`, `BIT #`, `RMBn/SMBn/BBRn/BBSn`, `WAI/STP`) with
-  correct addressing-mode lengths and branch-target resolution.
-- **A working `.lnx` container parser** (BLL header: page sizes, names,
-  rotation).
-- **The runtime hardware model in code** — the 64 KiB memory map with Suzy
-  ($FC00) / Mikey ($FD00) dispatch, CPU state + flag pack/unpack, and the Suzy/
-  Mikey register maps. Peripherals are register-file stubs at this stage.
+- **`m65c02recomp` builds and runs.** Subcommands: `info`, `dis`,
+  `decrypt`/`loader` (recover the boot loader), **`recomp`** (decrypt + discover
+  + emit C), **`recompbin`** (same, on a raw image), `emit`.
+- **Boot-block decryption (phase 2).** RSA exponent-3, fixed 51-byte modulus,
+  shift-and-add modular arithmetic. **Verified** byte-identical to an independent
+  reference; recovered loader (entry `$0200`) is coherent 65SC02. See
+  [`docs/BOOT.md`](docs/BOOT.md).
+- **Function discovery + C emitter (phase 3).** Recursive-descent discovery
+  carves the code into functions; the emitter writes one readable
+  `lynx_func_<addr>` per routine — every line annotated with its address and
+  disassembly — lowered to centralized, flag-correct runtime helpers
+  (`recomp_rt.h`). Intra-function flow becomes labels + `goto`, `JSR` a C call,
+  escapes runtime hooks.
+- **Proven by execution.** `ctest` runs a synthetic-fixture pipeline test
+  (recompile → compile the generated C → run it → assert hardware/memory
+  effects) plus decoder/ALU unit tests. The same path recompiles the real
+  Chip's Challenge loader routine `$02C9` and executes it correctly.
+- **Complete, validated WDC 65SC02 decoder** — all 256 opcodes incl. the
+  CMOS-only set, with correct mode lengths and branch targets.
+- **`.lnx` container parser** and the **runtime hardware model in code** (64 KiB
+  map + Suzy/Mikey dispatch, CPU state + flags). Peripherals are register-file
+  stubs at this stage.
 
-What's intentionally *not* done yet (see [`ROADMAP.md`](ROADMAP.md)):
+What's *not* done yet (see [`ROADMAP.md`](ROADMAP.md)):
 
-- The full cart→RAM image + true game entry (model the loader/boot-ROM cart-read
-  or snapshot an emulator — the decryptor above is the prerequisite, now done).
-- Function discovery (recursive descent) and the real C emitter.
+- The full cart→RAM image + true game entry — the input that lets discovery
+  reach the *game's* code, not just the loader (model the loader/boot-ROM
+  cart-read, or snapshot an emulator).
+- Jump-table / computed-jump target resolution; the hints format.
 - The Suzy blitter + math unit, Mikey timers/IRQs, video DMA readout, audio.
 
-```
-$ m65c02recomp loader "Chip's Challenge (USA, Europe).lnx"
-; decrypted boot loader, 250 bytes, entry $0200
-0200  BRA  $0202
-0202  JSR  $02C9
-0205  STZ  $05
-0207  LDA  #$03
-020B  JMP  $FE4A        ; hand back to the boot ROM
-0245  STA  $FD95        ; DISPADR = $0400  (framebuffer base)
-...
+```c
+// m65c02recomp recomp "Chip's Challenge (USA, Europe).lnx" out/  ->
+/* lynx_func_02C9: $02C9-$02DD (21 bytes) */
+void lynx_func_02C9(void) {
+    /* 02C9: LDY #$1F   */ lynx_ldy(0x1F);
+    /* 02CB: LDA #$00   */ lynx_lda(0x00);
+L_02CD:
+    /* 02CD: STA $FDA0,Y */ lynx_mem_write((uint16_t)(0xFDA0 + lynx_cpu.y), lynx_cpu.a);
+    /* 02D0: DEY        */ lynx_dey();
+    /* 02D1: BPL $02CD  */ if (!lynx_cpu.n) goto L_02CD;
+    /* 02D3: LDA #$04   */ lynx_lda(0x04);
+    /* 02D5: STA $FD8C  */ lynx_mem_write(0xFD8C, lynx_cpu.a);
+    /* 02DD: RTS        */ return;
+}
 ```
 
 ## Building

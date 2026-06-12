@@ -16,6 +16,7 @@ roms/
 *.lyx
 *.o65
 *.bin
+!tests/*.bin
 
 # IDA / Ghidra databases & exports
 *.i64

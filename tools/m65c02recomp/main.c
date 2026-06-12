@@ -66,8 +66,10 @@ int main(int argc, char **argv) {
             "  %s dis     <file.lnx> [start_off] [count]\n"
             "  %s decrypt <file.lnx> <loader.bin>   recover the boot loader\n"
             "  %s loader  <file.lnx> [count]         decrypt + disassemble loader\n"
+            "  %s recomp  <file.lnx> <outdir>        decrypt + discover + emit C\n"
+            "  %s recompbin <raw.bin> <baseHex> <outdir> [seeds...]\n"
             "  %s emit    <file.lnx> <outdir>\n",
-            argv[0], argv[0], argv[0], argv[0], argv[0]);
+            argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
         return 2;
     }
 
@@ -123,6 +125,50 @@ int main(int argc, char **argv) {
             printf("; decrypted boot loader, %d bytes, entry $%04X\n",
                    n, LYNX_LOADER_BASE);
             analyze_linear(out, (size_t)n, LYNX_LOADER_BASE, 0, count, dis_cb, NULL);
+        }
+    } else if (strcmp(cmd, "recomp") == 0) {
+        if (argc < 4) { fprintf(stderr, "error: recomp needs <outdir>\n"); rc = 2; }
+        else {
+            unsigned char loader[5 * 50];
+            int n = lynx_decrypt_loader(info.rom, info.rom_size, loader, sizeof(loader));
+            if (n < 0) { fprintf(stderr, "error: decrypt failed\n"); rc = 1; }
+            else {
+                /* Seeds: the boot entry ($0200) and the post-boot-ROM
+                 * continuation ($020E) the boot ROM returns into. */
+                static func_table_t tab;
+                uint16_t seeds[2] = { LYNX_LOADER_BASE, LYNX_LOADER_BASE + 0x0E };
+                int nf = analyze_discover(loader, (size_t)n, LYNX_LOADER_BASE,
+                                          seeds, 2, &tab);
+                if (emit_functions(argv[3], loader, (size_t)n, LYNX_LOADER_BASE,
+                                   &tab, path) != 0) {
+                    fprintf(stderr, "error: emit failed\n"); rc = 1;
+                } else {
+                    printf("recompiled %d functions (from %d-byte loader) -> %s\n",
+                           nf, n, argv[3]);
+                    printf("  external targets: %d\n", tab.next);
+                }
+            }
+        }
+    } else if (strcmp(cmd, "recompbin") == 0) {
+        /* recompbin <raw.bin> <baseHex> <outdir> [seedHex ...]
+         * Recompile a raw, already-decrypted code image (no .lnx framing). The
+         * same path a full post-boot RAM image will take. `data` here is the
+         * raw file (lnx_parse treated it as headerless: info.rom == data). */
+        if (argc < 5) { fprintf(stderr, "error: recompbin needs <baseHex> <outdir> [seeds...]\n"); rc = 2; }
+        else {
+            uint16_t base = (uint16_t)strtoul(argv[3], NULL, 0);
+            static func_table_t tab;
+            uint16_t seeds[16]; size_t ns = 0;
+            for (int i = 5; i < argc && ns < 16; i++)
+                seeds[ns++] = (uint16_t)strtoul(argv[i], NULL, 0);
+            if (ns == 0) seeds[ns++] = base;     /* default: entry at base */
+            int nf = analyze_discover(info.rom, info.rom_size, base, seeds, ns, &tab);
+            if (emit_functions(argv[4], info.rom, info.rom_size, base, &tab, path) != 0) {
+                fprintf(stderr, "error: emit failed\n"); rc = 1;
+            } else {
+                printf("recompiled %d functions (%zu bytes @ $%04X) -> %s\n",
+                       nf, info.rom_size, base, argv[4]);
+            }
         }
     } else if (strcmp(cmd, "emit") == 0) {
         if (argc < 4) { fprintf(stderr, "error: emit needs <outdir>\n"); rc = 2; }

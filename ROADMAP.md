@@ -35,15 +35,27 @@ Remaining for a *full* RAM image (rolled into phase 3): model the loader +
 boot-ROM cart-read (or snapshot a reference emulator) to get the complete
 cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
 
-## Phase 3 — function discovery + emitter
+## Phase 3 — function discovery + emitter ✅ (core)
 
+- [x] **Recursive-descent discovery** (`analyze_discover`): seed from entries,
+      follow calls/branches/jumps, carve functions, record external targets
+      (boot ROM, computed jumps). On the decrypted loader it recovers exactly
+      the 5 functions + 4 external targets a hand analysis finds.
+- [x] **C emitter** (`emit_functions`): one `lynx_func_<addr>` per routine, every
+      line annotated with its address + disassembly, lowered to readable
+      `lynxrecomp` runtime-helper calls; intra-function flow → labels + `goto`,
+      `JSR` → call, `RTS/RTI` → return, escapes → runtime hooks.
+- [x] **Runtime semantic helpers** (`recomp_rt.h`): centralized, flag-correct
+      65C02 ops (loads/stores/`ADC`/`SBC` incl. BCD/compares/shifts/RMW/stack/
+      transfers) so generated code stays legible.
+- [x] **Proven end-to-end**: `m65c02recomp recompbin` recompiles code to C that
+      compiles and **executes** with correct hardware/memory effects — covered
+      by `ctest` (unit tests + a synthetic-fixture pipeline test), and
+      demonstrated on the real Chip's Challenge loader routine `$02C9`.
 - [ ] Full RAM image: model the loader + boot-ROM cart-read (or emulator
-      snapshot) → complete cart→RAM load map + true game entry.
-- [ ] Recursive-descent discovery from vectors + hints → function table.
-- [ ] C emitter: one `lynx_func_<addr>` per routine, every line annotated with
-      its address and original disassembly (readability is a goal, not an
-      afterthought — the output is meant to be read).
-- [ ] Jump-table and computed-jump (`JMP (abs,X)`) resolution.
+      snapshot) → complete cart→RAM load map + true game entry (the input that
+      lets discovery reach the *game's* code, not just the loader).
+- [ ] Jump-table / computed-jump (`JMP (abs,X)`, `JMP (zp)`) target resolution.
 - [ ] Hints format (force-code, force-data, function names, rename/HLE).
 
 ## Phase 4 — the peripherals

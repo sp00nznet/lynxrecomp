@@ -31,25 +31,29 @@ mode, `JMP (abs,X)`).
 Phase 1: `analyze_linear()` — disassemble from an offset for N instructions,
 calling back per instruction. Enough to dump code and shake out decoder bugs.
 
-Phase 3: recursive-descent discovery. Seed a worklist from the reset/IRQ/NMI
-vectors and user hints; pop an address, decode forward until a terminator
-(`RTS`/`RTI`/`JMP`/`BRK`), push call/branch targets, and record `[start,end)`
-per function. On a 6502 two things make this harder than on a RISC: code and
-data interleave with no alignment, and computed jumps (`JMP (abs,X)` over a jump
-table) hide targets in data. Both are handled with hints + jump-table detection,
-the same way vbrecomp handles V810 dispatch tables.
+`analyze_discover()` (done): seed a worklist from known entries (and later
+hints); pop an address, decode forward extending past intra-function jumps until
+a terminator (`RTS`/`RTI`/`JMP`/`BRK`) with no pending forward branch targets,
+recording `[start,end)` and the in-function labels; push `JSR` targets as new
+functions; record targets outside the image (boot ROM, computed jumps) as
+external rather than following them. On the decrypted Chip's Challenge loader it
+recovers exactly the five functions and four external targets a hand analysis
+finds. Still ahead: computed-jump (`JMP (abs,X)` jump-table) resolution and the
+hints format for the cases static analysis can't win.
 
 ## emit (`emit.c`)
 
-Phase 1: `emit_skeleton()` writes a `generated/recomp_funcs.{c,h}` placeholder so
-the per-game target links today.
-
-Phase 3: one C function per discovered routine, `lynx_func_<addr>`, operating on
-`lynx_cpu` and calling `lynx_mem_read/write`. The output is **meant to be read**:
-every emitted line carries its source address and original disassembly as a
-comment, flag math is factored into named helpers, and each function gets a
-header comment with its range and role (e.g. IRQ handler). Same philosophy as
-vbrecomp's generated V810 C.
+`emit_functions()` (done): one C function per discovered routine,
+`lynx_func_<addr>`, operating on `lynx_cpu` and reaching memory through
+`lynx_mem_read/write`. The output is **meant to be read** — every emitted line
+carries its source address and original disassembly as a comment, and flag math
+is factored into the named runtime helpers in `recomp_rt.h` (`lynx_lda`,
+`lynx_adc`, `lynx_alu_lsr`, …) rather than inlined. Intra-function control flow
+becomes labels + `goto`, `JSR` becomes a C call to the target function,
+`RTS/RTI` becomes `return`, and control that leaves the image (boot-ROM calls,
+computed/indirect jumps) becomes an overridable runtime hook
+(`lynx_boot_call`, `lynx_jmp_indirect`, …). Same philosophy as vbrecomp's
+generated V810 C. `emit_skeleton()` remains for the pre-discovery placeholder.
 
 ## hints (phase 3)
 

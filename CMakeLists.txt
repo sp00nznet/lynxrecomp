@@ -21,6 +21,7 @@ add_library(lynxrecomp STATIC
     src/suzy.c
     src/mikey.c
     src/timer.c
+    src/serial.c
     src/input.c
     src/recomp_rt.c
     src/recomp_exec.c

@@ -6,11 +6,12 @@
 #include "lynxrecomp/mikey.h"
 #include "lynxrecomp/timer.h"
 #include "lynxrecomp/audio.h"
+#include "lynxrecomp/serial.h"
 #include <string.h>
 #include <stdio.h>
 
 #define STATE_MAGIC   "LYNXSAVE"      /* 8 bytes */
-#define STATE_VERSION 1
+#define STATE_VERSION 2               /* v2 adds the ComLynx UART section */
 
 /* Section sizes. Timer/audio are serialized through their modules; the rest are
  * plain globals copied wholesale. */
@@ -22,7 +23,8 @@
 
 size_t lynx_state_size(void) {
     return HDR + SZ_RAM + SZ_CPU + SZ_SUZY + SZ_MIKEY
-         + lynx_timer_state_size() + lynx_audio_state_size();
+         + lynx_timer_state_size() + lynx_audio_state_size()
+         + lynx_serial_state_size();
 }
 
 size_t lynx_state_save(uint8_t *buf, size_t cap) {
@@ -36,6 +38,7 @@ size_t lynx_state_save(uint8_t *buf, size_t cap) {
     memcpy(p, &lynx_mikey,SZ_MIKEY); p += SZ_MIKEY;
     p += lynx_timer_state_save(p);
     p += lynx_audio_state_save(p);
+    p += lynx_serial_state_save(p);
     return (size_t)(p - buf);
 }
 
@@ -49,6 +52,7 @@ int lynx_state_load(const uint8_t *buf, size_t size) {
     memcpy(&lynx_mikey,p, SZ_MIKEY); p += SZ_MIKEY;
     p += lynx_timer_state_load(p);
     p += lynx_audio_state_load(p);
+    p += lynx_serial_state_load(p);
     return 0;
 }
 

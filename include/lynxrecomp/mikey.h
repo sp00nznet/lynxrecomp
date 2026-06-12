@@ -25,7 +25,8 @@ enum {
     MIKEY_SYSCTL1  = 0x87, /* power + cart address strobe                   */
     MIKEY_IODIR    = 0x8A,
     MIKEY_IODAT    = 0x8B,
-    MIKEY_SERCTL   = 0x8C,
+    MIKEY_SERCTL   = 0x8C, /* ComLynx UART control/status                    */
+    MIKEY_SERDAT   = 0x8D, /* ComLynx UART data (transmit/receive)           */
     MIKEY_DISPCTL  = 0x92, /* video DMA enable + flip                       */
     MIKEY_PBKUP    = 0x93,
     MIKEY_DISPADRL = 0x94, MIKEY_DISPADRH = 0x95,  /* framebuffer base in RAM */

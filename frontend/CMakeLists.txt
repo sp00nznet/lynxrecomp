@@ -39,11 +39,15 @@ endif()
 add_library(lynxrecomp_frontend STATIC
     src/platform_sdl.c
     src/mp_session.c
+    src/net.c
     ${MENU_SRC}
 )
 target_include_directories(lynxrecomp_frontend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+if(MSVC)
+    target_compile_definitions(lynxrecomp_frontend PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 target_link_libraries(lynxrecomp_frontend
     PUBLIC lynxrecomp
     PUBLIC SDL2::SDL2
@@ -58,6 +62,6 @@ if(LYNXRECOMP_MENU)
 endif()
 
 if(MSVC)
-    set_source_files_properties(src/platform_sdl.c src/mp_session.c
+    set_source_files_properties(src/platform_sdl.c src/mp_session.c src/net.c
         PROPERTIES COMPILE_OPTIONS "/W3")
 endif()

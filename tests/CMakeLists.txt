@@ -37,6 +37,12 @@ target_include_directories(test_audio PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(test_audio PRIVATE lynxrecomp)
 add_test(NAME audio COMMAND test_audio)
 
+# --- Mikey UART / ComLynx serial ---
+add_executable(test_serial test_serial.c)
+target_include_directories(test_serial PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(test_serial PRIVATE lynxrecomp)
+add_test(NAME serial COMMAND test_serial)
+
 # --- save states ---
 add_executable(test_state test_state.c)
 target_include_directories(test_state PRIVATE ${PROJECT_SOURCE_DIR}/include)

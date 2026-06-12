@@ -3,6 +3,7 @@
 #include "lynxrecomp/mikey.h"
 #include "lynxrecomp/timer.h"
 #include "lynxrecomp/audio.h"
+#include "lynxrecomp/serial.h"      /* ComLynx UART ($FD8C/$FD8D) */
 #include "lynxrecomp/recomp_rt.h"   /* lynx_frame_hook */
 
 lynx_mikey_t lynx_mikey;
@@ -11,6 +12,7 @@ void lynx_mikey_init(void) {
     for (int i = 0; i < 0x100; i++) lynx_mikey.reg[i] = 0;
     lynx_timer_init();
     lynx_audio_init();
+    lynx_serial_init();
 }
 
 uint8_t lynx_mikey_read(uint8_t off) {
@@ -18,6 +20,9 @@ uint8_t lynx_mikey_read(uint8_t off) {
         case MIKEY_INTRST:
         case MIKEY_INTSET:
             return lynx_irq_latch;     /* both read the pending interrupt latch */
+        case MIKEY_SERCTL:             /* UART status / received byte */
+        case MIKEY_SERDAT:
+            return lynx_serial_read(off);
         default:
             return lynx_mikey.reg[off];
     }
@@ -34,6 +39,11 @@ void lynx_mikey_write(uint8_t off, uint8_t val) {
         case MIKEY_DISPADRH:               /* high byte written last = frame flip */
             lynx_mikey.reg[off] = val;
             if (lynx_frame_hook) lynx_frame_hook();
+            return;
+        case MIKEY_SERCTL:                 /* UART control / transmit */
+        case MIKEY_SERDAT:
+            lynx_mikey.reg[off] = val;     /* keep a shadow for state/inspection */
+            lynx_serial_write(off, val);
             return;
         default:
             lynx_mikey.reg[off] = val;

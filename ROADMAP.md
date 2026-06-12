@@ -14,18 +14,31 @@ Phased plan. Phase 1 is the scaffold in this commit; later phases are the work.
       CPU state + flag pack/unpack, peripheral register maps.
 - [x] Build system (CMake), docs, MIT license.
 
-## Phase 2 — runnable code image
+## Phase 2 — get to real code (boot decrypt) ✅
 
 The blocker before any game logic runs: retail carts boot through an encrypted
 256-byte loader (see [`docs/BOOT.md`](docs/BOOT.md)).
 
-- [ ] Decrypt/bypass the boot block to obtain the loader, then follow the cart
-      directory to the real game code, producing a flat code+data image with a
-      known load map (which cart pages land at which RAM addresses).
-- [ ] Reset/IRQ/NMI vector extraction to seed analysis.
+- [x] **Boot-block decryptor** (`lynxdec.c`): RSA exponent-3 with the public
+      51-byte modulus, shift-and-add modular arithmetic (no multiword multiply/
+      divide). Exposed as `m65c02recomp decrypt` / `loader` and the library call
+      `lynx_decrypt_loader()`.
+- [x] **Verified correct**: C output is byte-identical to an independent Python
+      implementation on the Chip's Challenge loader, and the 250 decrypted bytes
+      disassemble as coherent 65SC02 (entry `$0200`: palette/Suzy/display setup,
+      boot-ROM cart-read calls).
+- [x] ROM structure mapped: only the first ≤255 bytes are encrypted; the rest is
+      plaintext game code/data.
+- [x] Entry point recovered (`$0200`) to seed analysis.
+
+Remaining for a *full* RAM image (rolled into phase 3): model the loader +
+boot-ROM cart-read (or snapshot a reference emulator) to get the complete
+cart→RAM load map. Decoder/analyzer are unchanged — only the input image is.
 
 ## Phase 3 — function discovery + emitter
 
+- [ ] Full RAM image: model the loader + boot-ROM cart-read (or emulator
+      snapshot) → complete cart→RAM load map + true game entry.
 - [ ] Recursive-descent discovery from vectors + hints → function table.
 - [ ] C emitter: one `lynx_func_<addr>` per routine, every line annotated with
       its address and original disassembly (readability is a goal, not an

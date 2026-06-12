@@ -5,6 +5,15 @@ in the standard recompiler shape — **decode → analyze → emit** — and is 
 be small and legible. Phase 1 ships the decoder, the `.lnx` parser, the linear
 analyzer and a skeleton emitter; phases 2–3 add the real discovery and emission.
 
+## decrypt (`lynxdec.c`)
+
+Before anything can be decoded, the cart's RSA-encrypted boot loader has to be
+recovered — retail Lynx code does not exist in the clear until the boot ROM
+decrypts it. `lynx_decrypt_loader()` reproduces that step (exponent-3 RSA, fixed
+51-byte modulus); the result is the 250-byte secondary loader at `$0200`, which
+is real 65SC02 the rest of the pipeline can consume. Full detail and the
+verification are in [`BOOT.md`](BOOT.md).
+
 ## decode (`decode.c`)
 
 A 256-entry table maps each opcode to `{mnemonic, addressing-mode, control-flow
@@ -68,7 +77,9 @@ already used against the PSX/N64 projects.
 ## usage
 
 ```
-m65c02recomp info <file.lnx>                 # parse + print the header
-m65c02recomp dis  <file.lnx> [start] [count] # linear-sweep disassemble
-m65c02recomp emit <file.lnx> <outdir>        # write recomp_funcs skeleton
+m65c02recomp info    <file.lnx>                 # parse + print the header
+m65c02recomp dis     <file.lnx> [start] [count] # linear-sweep disassemble
+m65c02recomp decrypt <file.lnx> <loader.bin>    # recover the boot loader
+m65c02recomp loader  <file.lnx> [count]         # decrypt + disassemble loader
+m65c02recomp emit    <file.lnx> <outdir>        # write recomp_funcs skeleton
 ```

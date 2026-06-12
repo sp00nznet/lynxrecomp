@@ -1,58 +1,98 @@
-# The Lynx boot block (why you can't just disassemble a cart)
+# The Lynx boot block — decrypted (phase 2, done)
 
-Disassemble the first bytes of any retail `.lnx` and you get noise:
-
-```
-$ m65c02recomp dis "Chip's Challenge (USA, Europe).lnx" 0 8
-0200  FB NOP
-0201  C5 CMP $BF
-0203  A3 NOP
-...
-```
-
-That's not 65SC02 code — it's the **encrypted boot block**, and it's the one
-real obstacle between a Lynx ROM and recompilable code.
+Disassemble the first bytes of any retail `.lnx` and you get noise — because the
+first ~256 bytes are an **RSA-encrypted secondary loader**, the Lynx's lockout.
+Phase 2 implements the decryption, so the recompiler can recover real 65SC02
+code. This is now wired in: `m65c02recomp decrypt` / `m65c02recomp loader`, and
+the library entry `lynx_decrypt_loader()` (`tools/m65c02recomp/lynxdec.c`).
 
 ## How a Lynx cart boots
 
-1. On reset the CPU runs Mikey's internal **512-byte boot ROM** at $FE00.
-2. The boot ROM reads the **first ~256 bytes** of the cart through Mikey's cart
-   strobe interface. These bytes are **encrypted** with Atari's scheme (a custom
-   public-key-style signature check: the cart stores values that the boot ROM
-   transforms with a fixed exponent/modulus and accumulates into a small
-   plaintext loader). This was Atari's lockout — only Atari could produce a cart
-   that the boot ROM would accept.
-3. The decrypted result is a tiny **secondary loader** placed in RAM (around
-   $00xx–$02xx). The boot ROM jumps to it.
-4. That loader streams the rest of the cart's pages into DRAM (using the page
-   size from the header — 512 bytes here) and jumps into the real game.
+1. On reset the CPU runs Mikey's internal **512-byte boot ROM** at `$FE00`.
+2. The boot ROM reads the start of the cart through Mikey's cart strobe. The
+   cart's **first byte is `256 - blockcount`** (so `$FB` → 5 blocks), followed
+   by `blockcount` blocks of **51 encrypted bytes** each.
+3. It RSA-decrypts the blocks into a **250-byte plaintext loader** and places it
+   in RAM at **`$0200`**, then jumps there.
+4. That loader brings up the display, then uses boot-ROM helpers to stream the
+   (plaintext) game off the cart and runs it.
 
-So the cart image is: `[encrypted boot block][plaintext game pages...]`. The
-game code itself, after the boot block, is ordinary unencrypted 65SC02 — but you
-need the load map (which page goes to which RAM address) that the loader carries.
+## The decryption (verified)
 
-## What this means for recompilation
+RSA with public exponent **3** and a fixed 51-byte public modulus `N`. Per block
+(matches `dhuseby/lynx-encryption-tools`, the public reference; our C
+implementation is checked byte-for-byte against an independent Python
+implementation on the Chip's Challenge loader):
 
-Phase 2's job is to get from `cart.lnx` to **a flat code+data image with a known
-load map**. Two routes:
+```
+blocks = 256 - rom[0]                 # 5 for Chip's Challenge
+acc    = 0                            # carried across all blocks
+for each 51-byte block:
+    x   = the 51 bytes, reversed, as a big integer
+    r   = x^3 mod N                   # RSA, exponent 3
+    buf = r big-endian, minimal, left-aligned in a zeroed 51-byte buffer
+    for i = 50 downto 1:              # buf[0] is carry cruft, dropped
+        acc = (acc + buf[i]) & 0xFF
+        emit acc
+# -> blocks*50 = 250 plaintext bytes = the loader at $0200
+```
 
-- **Decrypt the boot block.** The scheme was reverse-engineered long ago; the
-  modulus/exponent are public and tools (`lynx_encrypt`/`lynx_decrypt`,
-  Handy/Mednafen's loader) already do it. We reimplement the decrypt to recover
-  the secondary loader, then interpret it to learn the page→RAM mapping.
-- **Trace a known-good emulator load.** Run the cart in a reference emulator to a
-  post-boot point and snapshot RAM + the reset/IRQ vectors; use that as the
-  image the recompiler analyzes. Useful as an oracle even once we decrypt
-  directly.
+`N` (big-endian) is in `lynxdec.c`. The bignum work uses shift-and-add modular
+arithmetic (modular double + conditional subtract) — only add/compare on 51-byte
+values, no multiword multiply or division to get wrong.
 
-The `dis`/`info` tools work on whatever image you hand them, so once phase 2
-produces the decrypted, page-mapped image, the existing decoder/analyzer apply
-unchanged — only the *input* changes, not the recompiler.
+## What the recovered loader does
+
+The 250 decrypted bytes are unmistakably real code (entry `$0200`):
+
+```
+0200  BRA  $0202
+0202  JSR  $02C9        ; clear the 32-byte palette ($FDA0..), set SERCTL/IODAT
+0205  STZ  $05
+0207  LDA  #$03
+0209  STA  $06          ; zero-page load state
+020B  JMP  $FE4A        ; into the boot ROM (cart-read helper)
+...
+0222  STA  $FC11        ; Suzy sprite-engine address setup
+0227  LDA  $03E5,X      ; copy a table into Suzy regs $FC00,Y
+022D  STA  $FC00,Y
+0240  STZ  $FD94
+0243  LDA  #$04
+0245  STA  $FD95        ; DISPADR = $0400  (framebuffer base in RAM)
+02DE  JSR  $FE00        ; boot-ROM cart-read entry
+```
+
+It clears the palette, programs Suzy, sets the framebuffer to `$0400`, and calls
+boot-ROM helpers (`$FE00`/`$FE4A`) to pull the rest of the cart into RAM.
+
+## From here to a full game image (phase 3)
+
+The loader hands off to **boot-ROM routines** (`$FE00`/`$FE4A`) to read the
+plaintext game pages into RAM. To produce the complete, page-mapped RAM image +
+true entry the recompiler analyzes, either:
+
+- **Model the loader + boot-ROM cart-read** statically (needs the 512-byte boot
+  ROM image; the loader's copy loop and the cart directory then give the
+  cart-offset → RAM-address map), or
+- **Snapshot a reference emulator** (Handy/Mednafen) just past boot: dump RAM +
+  the reset/IRQ/NMI vectors and feed that to the recompiler. The decryptor here
+  is what lets us *validate* that snapshot against first principles.
+
+Either way the decoder/analyzer are unchanged — only the input image changes.
+
+## Vectors
+
+After decrypt the effective entry is **`$0200`** (the analyzer's seed). The
+`$FFFA-$FFFF` NMI/RESET/IRQ vectors live in the boot ROM at reset; the running
+game installs its own IRQ handler in RAM and points Mikey's timer interrupts at
+it — those RAM handler addresses are recovered during phase-3 discovery, seeded
+from the loader and the timer-setup writes.
 
 ## Notes
 
-- Homebrew and some dumps ship with a recognizable plaintext loader or a
-  pre-decrypted layout; those are a useful early bring-up path before the full
-  decrypt is wired in.
-- The 64-byte `.lnx` header (BLL format) is **not** part of the cart and not
-  encrypted; it carries the bank page sizes we need to walk pages once decoded.
+- Only the first frame (≤255 bytes) is encrypted. Everything after is plaintext
+  game code/data (some of it compressed — high entropy but not encrypted).
+- Homebrew/`.o` dumps may ship a plaintext loader already; those are a useful
+  early bring-up path.
+- The 64-byte `.lnx` header is not part of the cart and not encrypted; it
+  carries the bank page sizes used to walk pages.

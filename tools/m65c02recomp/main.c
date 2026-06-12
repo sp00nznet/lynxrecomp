@@ -17,6 +17,7 @@
 #include "decode.h"
 #include "analyze.h"
 #include "emit.h"
+#include "lynxdec.h"
 
 static uint8_t *read_file(const char *path, size_t *out_size) {
     FILE *f = fopen(path, "rb");
@@ -59,12 +60,14 @@ static void dis_cb(const insn_t *in, void *user) {
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
-            "m65c02recomp - Atari Lynx static recompiler (phase 1)\n"
+            "m65c02recomp - Atari Lynx static recompiler\n"
             "usage:\n"
-            "  %s info <file.lnx>\n"
-            "  %s dis  <file.lnx> [start_off] [count]\n"
-            "  %s emit <file.lnx> <outdir>\n",
-            argv[0], argv[0], argv[0]);
+            "  %s info    <file.lnx>\n"
+            "  %s dis     <file.lnx> [start_off] [count]\n"
+            "  %s decrypt <file.lnx> <loader.bin>   recover the boot loader\n"
+            "  %s loader  <file.lnx> [count]         decrypt + disassemble loader\n"
+            "  %s emit    <file.lnx> <outdir>\n",
+            argv[0], argv[0], argv[0], argv[0], argv[0]);
         return 2;
     }
 
@@ -94,6 +97,33 @@ int main(int argc, char **argv) {
         uint16_t base = 0x0200;
         printf("; linear sweep from cart offset 0x%zX, base $%04X\n", start, base);
         analyze_linear(info.rom, info.rom_size, base, start, count, dis_cb, NULL);
+    } else if (strcmp(cmd, "decrypt") == 0) {
+        if (argc < 4) { fprintf(stderr, "error: decrypt needs <loader.bin>\n"); rc = 2; }
+        else {
+            unsigned char out[5 * 50];
+            int n = lynx_decrypt_loader(info.rom, info.rom_size, out, sizeof(out));
+            if (n < 0) { fprintf(stderr, "error: decrypt failed\n"); rc = 1; }
+            else {
+                FILE *f = fopen(argv[3], "wb");
+                if (!f) { fprintf(stderr, "error: cannot write %s\n", argv[3]); rc = 1; }
+                else {
+                    fwrite(out, 1, (size_t)n, f);
+                    fclose(f);
+                    printf("decrypted %d-byte loader (%d blocks) -> %s\n",
+                           n, n / 50, argv[3]);
+                }
+            }
+        }
+    } else if (strcmp(cmd, "loader") == 0) {
+        unsigned char out[5 * 50];
+        int n = lynx_decrypt_loader(info.rom, info.rom_size, out, sizeof(out));
+        if (n < 0) { fprintf(stderr, "error: decrypt failed\n"); rc = 1; }
+        else {
+            size_t count = (argc > 3) ? (size_t)strtoul(argv[3], NULL, 0) : 64;
+            printf("; decrypted boot loader, %d bytes, entry $%04X\n",
+                   n, LYNX_LOADER_BASE);
+            analyze_linear(out, (size_t)n, LYNX_LOADER_BASE, 0, count, dis_cb, NULL);
+        }
     } else if (strcmp(cmd, "emit") == 0) {
         if (argc < 4) { fprintf(stderr, "error: emit needs <outdir>\n"); rc = 2; }
         else rc = emit_skeleton(argv[3], &info, path) == 0 ? 0 : 1;

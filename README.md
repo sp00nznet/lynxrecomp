@@ -39,13 +39,20 @@ is the thing other people fork to recompile *their* Lynx game.
   native Lynx game executable
 ```
 
-## Status — phase 1 (scaffold)
+## Status — phases 1–2
 
 What works today:
 
-- **`m65c02recomp` builds and runs.** Three subcommands: `info` (parse a `.lnx`
-  header), `dis` (linear-sweep disassembler), `emit` (write a `recomp_funcs`
+- **`m65c02recomp` builds and runs.** Subcommands: `info` (parse a `.lnx`
+  header), `dis` (linear-sweep disassembler), **`decrypt` / `loader`** (recover
+  and disassemble the encrypted boot loader), `emit` (write a `recomp_funcs`
   skeleton).
+- **Boot-block decryption (phase 2).** Retail carts boot through an
+  RSA-encrypted secondary loader; `lynxdec.c` decrypts it (exponent 3, fixed
+  51-byte modulus, shift-and-add modular arithmetic). **Verified**: byte-identical
+  to an independent reference implementation, and the recovered 250 bytes
+  disassemble as coherent 65SC02 (entry `$0200`). This is what gets the
+  recompiler from an encrypted cart to real code — see [`docs/BOOT.md`](docs/BOOT.md).
 - **A complete, validated WDC 65SC02 decoder** — all 256 opcodes including the
   CMOS-only instructions (`BRA`, `PHX/PHY/PLX/PLY`, `STZ`, `TRB/TSB`, `(zp)`
   indirect, `JMP (abs,X)`, `BIT #`, `RMBn/SMBn/BBRn/BBSn`, `WAI/STP`) with
@@ -58,19 +65,21 @@ What works today:
 
 What's intentionally *not* done yet (see [`ROADMAP.md`](ROADMAP.md)):
 
+- The full cart→RAM image + true game entry (model the loader/boot-ROM cart-read
+  or snapshot an emulator — the decryptor above is the prerequisite, now done).
 - Function discovery (recursive descent) and the real C emitter.
-- Getting an executable code image past the **encrypted boot block** — every
-  retail Lynx cart boots through a 256-byte encrypted loader; see
-  [`docs/BOOT.md`](docs/BOOT.md).
 - The Suzy blitter + math unit, Mikey timers/IRQs, video DMA readout, audio.
 
 ```
-$ m65c02recomp info "Chip's Challenge (USA, Europe).lnx"
-container      : BLL .lnx (header 64 bytes)
-cart name      : chipchal.lnx
-manufacturer   : Atari
-bank0 page size: 512 bytes
-cart image     : 131072 bytes
+$ m65c02recomp loader "Chip's Challenge (USA, Europe).lnx"
+; decrypted boot loader, 250 bytes, entry $0200
+0200  BRA  $0202
+0202  JSR  $02C9
+0205  STZ  $05
+0207  LDA  #$03
+020B  JMP  $FE4A        ; hand back to the boot ROM
+0245  STA  $FD95        ; DISPADR = $0400  (framebuffer base)
+...
 ```
 
 ## Building

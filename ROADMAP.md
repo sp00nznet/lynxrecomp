@@ -120,10 +120,35 @@ So far the emitted `lynx_func_*` C *compiles* but the game *runs* via the
       compiles + links. The emitter is now boundary-aware (a `goto` only targets
       a real decoded instruction boundary), so imperfect discovery / data-as-code
       can't produce invalid C.
-- [ ] **Execution model**: emit cooperative "ticks" at loop back-edges that step
-      time and deliver the IRQ by dispatching the handler; bound a run with
-      setjmp/longjmp so the host can present frames + poll input.
-- [ ] **Run + verify**: execute the recompiled game and diff its framebuffer
-      against `lynxrun` (the interpreter oracle), frame for frame. A hybrid
-      fallback (interpret addresses without a recompiled function) bridges the
-      gap while discovery coverage grows.
+- [x] **Execution model**: the emitter plants cooperative `lynx_tick()`s at loop
+      back-edges that step time and deliver the IRQ by dispatching the handler;
+      the per-game host bounds a run with setjmp/longjmp so it can present frames
+      + poll input. The **recompiled C** (no interpreter linked) renders the
+      Chip's Challenge title and plays the attract music.
+- [x] **Run + verify**: the recompiled game runs from a post-init snapshot and
+      renders correct frames (cross-checked against `lynxrun`, the oracle).
+      Discovery seeds close the computed-jump gaps (zero gaps on Chip's
+      Challenge), so no interpret-fallback is needed in the recompiled path.
+
+## Phase 7 — player-facing layer ✅
+
+- [x] **Readable output**: hardware-register accesses in the emitted C and the
+      disassembler are annotated by name (`STA $FC91 ; SPRGO (start blitter)`)
+      via a shared `hwregs` table; generated files carry a header explaining the
+      conventions. Addresses the recomp community's "human-readable code" ask.
+- [x] **Save states** (`src/state.c`): serialize the whole machine — RAM, CPU,
+      Suzy, Mikey, timer/audio internals, ComLynx UART — to a versioned,
+      self-checking blob. Unit-tested round-trip.
+- [x] **SDL2 + Dear ImGui frontend** (`frontend/`, opt-in `LYNXRECOMP_FRONTEND`):
+      window with integer scaling + screen rotation, audio, keyboard+gamepad
+      input, and a menu (graphics / sound / controller rebinding / save-load /
+      multiplayer / help) with settings persisted to `lynx_config.ini`. Core
+      stays dependency-free; only this layer pulls in SDL2/ImGui.
+      ([`docs/FRONTEND.md`](docs/FRONTEND.md))
+- [x] **ComLynx multiplayer**: a real Mikey UART (`src/serial.c`: `SERCTL`/
+      `SERDAT`, receive FIFO, serial IRQ on Timer 4's bit) bridged over TCP
+      (`frontend/`: `net.c` + `mp_session.c`) — the Lynx's serial cable between
+      separate handhelds, not a split-controller sync. Loopback unit-tested.
+      ([`docs/MULTIPLAYER.md`](docs/MULTIPLAYER.md))
+- [ ] Wire an interactive per-game host through the frontend (the reference games
+      currently run headless to a PPM); bring up a real ComLynx link game.

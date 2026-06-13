@@ -63,9 +63,10 @@ Suzy/Mikey hardware is emulated as a runtime — the same split as N64Recomp.
   ([`docs/BOOT.md`](docs/BOOT.md))
 - **Recursive-descent discovery** that follows computed-jump tables read from the
   image, + **a C emitter** producing one readable `lynx_func_<addr>` per routine —
-  every line annotated with its address and disassembly, lowered to centralized
-  flag-correct runtime helpers (`recomp_rt.h`). On Chip's Challenge: **317
-  functions, ~62 KB of code, zero dispatch gaps.**
+  every line annotated with its address, disassembly, **and the hardware-register
+  name** when it touches one (`STA $FC91 ; SPRGO (start blitter)`), lowered to
+  centralized flag-correct runtime helpers (`recomp_rt.h`). On Chip's Challenge:
+  **317 functions, ~62 KB of code, zero dispatch gaps.**
 - Subcommands: `info`, `dis`, `decrypt`/`loader`, `recomp`/`recompbin`, `emit`.
 
 **Getting to runnable code** (`lynxexec`, `lynxrun --snapshot`)
@@ -89,24 +90,36 @@ synthetic inputs, no game data:
   The per-game host (in the game repo) runs the **recompiled** C directly.
   ([`docs/RUN.md`](docs/RUN.md))
 
+**Player-facing layer** — optional, built on the same runtime:
+- **Save states** — serialize the whole machine (RAM, CPU, Suzy, Mikey, timers,
+  audio, UART) to a versioned, self-checking blob (`lynxrecomp/state.h`).
+- **An SDL2 + Dear ImGui frontend** (opt-in: `-DLYNXRECOMP_FRONTEND=ON`) — a
+  window with integer scaling, screen rotation, audio, keyboard+gamepad input,
+  and a menu for graphics/sound/controller options, save/load, and multiplayer.
+  ([`docs/FRONTEND.md`](docs/FRONTEND.md))
+- **ComLynx multiplayer** — a real Mikey UART (`SERCTL`/`SERDAT`, serial IRQ on
+  Timer 4) bridged over TCP, modelling the Lynx's serial cable between separate
+  handhelds — not a two-pads-on-one-console sync. ([`docs/MULTIPLAYER.md`](docs/MULTIPLAYER.md))
+
 What's *not* done yet (see [`ROADMAP.md`](ROADMAP.md)): blitter hardware
 scaling/stretch/tilt + collision; signed math; stereo/attenuation (Howard);
 live audio in `--play`; a full-fidelity recompiled cold boot. None are
 foundational — they're polish on a working pipeline.
 
 ```c
-// each 65SC02 routine becomes a readable C function, every line annotated:
+// each 65SC02 routine becomes a readable C function; every line carries its
+// address + disassembly, and hardware registers are named:
 /* lynx_func_02C9: $02C9-$02DD (21 bytes) */
 void lynx_func_02C9(void) {
-    /* 02C9: LDY #$1F   */ lynx_ldy(0x1F);
-    /* 02CB: LDA #$00   */ lynx_lda(0x00);
+    /* 02C9: LDY #$1F            */ lynx_ldy(0x1F);
+    /* 02CB: LDA #$00            */ lynx_lda(0x00);
 L_02CD:
-    /* 02CD: STA $FDA0,Y */ lynx_mem_write((uint16_t)(0xFDA0 + lynx_cpu.y), lynx_cpu.a);
-    /* 02D0: DEY        */ lynx_dey();
-    /* 02D1: BPL $02CD  */ if (!lynx_cpu.n) goto L_02CD;
-    /* 02D3: LDA #$04   */ lynx_lda(0x04);
-    /* 02D5: STA $FD8C  */ lynx_mem_write(0xFD8C, lynx_cpu.a);
-    /* 02DD: RTS        */ return;
+    /* 02CD: STA $FDA0,Y ; GREEN0 */ lynx_mem_write((uint16_t)(0xFDA0 + lynx_cpu.y), lynx_cpu.a);
+    /* 02D0: DEY                 */ lynx_dey();
+    /* 02D1: BPL $02CD           */ if (!lynx_cpu.n) goto L_02CD;
+    /* 02D3: LDA #$04            */ lynx_lda(0x04);
+    /* 02D5: STA $FD8C ; SERCTL  */ lynx_mem_write(0xFD8C, lynx_cpu.a);
+    /* 02DD: RTS                 */ return;
 }
 ```
 
@@ -136,14 +149,17 @@ on a platform with a deeper and better-loved library.
 
 ```
 include/lynxrecomp/   runtime API (cpu, mem, recomp_rt, suzy, mikey, timer,
-                      input, audio)
+                      input, audio, serial, state)
 src/                  runtime: CPU helpers + dispatch/tick, Suzy blitter+math,
-                      Mikey timers/video/audio
-tools/m65c02recomp/   recompiler (lnx·decode·analyze·emit·lynxdec) + the
+                      Mikey timers/video/audio, ComLynx UART, save states
+tools/m65c02recomp/   recompiler (lnx·decode·analyze·emit·hwregs·lynxdec) + the
                       interp core, lynxexec (boot→image), lynxrun (driver)
-tests/                ctest: decoder, ALU, blitter, math, audio, the recompile→
-                      run pipeline, and computed-jump dispatch
-docs/                 ARCHITECTURE · RECOMPILER · BOOT · IMAGE · RUN
+frontend/             opt-in SDL2 + Dear ImGui shell: window/audio/input,
+                      menu overlay, ComLynx netplay (vendored imgui/)
+tests/                ctest: decoder, ALU, blitter, math, audio, serial, save
+                      states, the recompile→run pipeline, computed-jump dispatch
+docs/                 ARCHITECTURE · RECOMPILER · BOOT · IMAGE · RUN ·
+                      FRONTEND · MULTIPLAYER
 ```
 
 ## Documentation
@@ -153,6 +169,8 @@ docs/                 ARCHITECTURE · RECOMPILER · BOOT · IMAGE · RUN
 - [`docs/BOOT.md`](docs/BOOT.md) — the encrypted boot block and how we get to runnable code.
 - [`docs/IMAGE.md`](docs/IMAGE.md) — booting the cart to a full RAM image + game entry (`lynxexec`).
 - [`docs/RUN.md`](docs/RUN.md) — the execution driver (`lynxrun`): running a game to rendered frames.
+- [`docs/FRONTEND.md`](docs/FRONTEND.md) — the SDL2 + ImGui shell: window, audio, input, menu, save states.
+- [`docs/MULTIPLAYER.md`](docs/MULTIPLAYER.md) — ComLynx model: Mikey UART + netplay over TCP.
 - [`ROADMAP.md`](ROADMAP.md) — phased plan.
 
 ## Credits & references
